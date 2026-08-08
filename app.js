@@ -236,7 +236,7 @@ function renderHeader() {
   return `
   <div class="topbar"><div class="topbar-inner">
     <div class="logo-row">
-      <div class="logo-mark">M</div>
+      <div class="logo-mark"><img class="logo-img" src="/favicon.png" alt=""></div>
       <div class="logo-name">Mission Month</div>
     </div>
     <div class="nav-pills">

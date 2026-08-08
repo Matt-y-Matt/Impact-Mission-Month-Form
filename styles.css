@@ -13,7 +13,10 @@ h1, h2, .brico { font-family: 'Bricolage Grotesque', serif; }
 .topbar { background: #22301F; color: #F6F2E8; padding: 0 20px; }
 .topbar-inner { max-width: 1080px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 58px; }
 .logo-row { display: flex; align-items: center; gap: 10px; }
-.logo-mark { width: 30px; height: 30px; border-radius: 9px; background: #C96F4A; display: flex; align-items: center; justify-content: center; font-family: 'Bricolage Grotesque', serif; font-weight: 800; font-size: 15px; color: #fff; }
+/* Cream badge, not the dark bar: the logo is a deep red that needs a light
+   background behind it to stay legible at 30px. */
+.logo-mark { width: 30px; height: 30px; border-radius: 9px; background: #F6F2E8; display: flex; align-items: center; justify-content: center; font-family: 'Bricolage Grotesque', serif; font-weight: 800; font-size: 15px; color: #22301F; overflow: hidden; }
+.logo-img { width: 22px; height: 22px; object-fit: contain; display: block; }
 .logo-name { font-family: 'Bricolage Grotesque', serif; font-weight: 700; font-size: 16px; letter-spacing: 0.01em; }
 .nav-pills { display: flex; gap: 6px; background: rgba(255,255,255,0.08); padding: 4px; border-radius: 99px; }
 .nav-pill { border: none; cursor: pointer; padding: 7px 18px; border-radius: 99px; font-size: 13.5px; font-weight: 600; background: transparent; color: rgba(246,242,232,0.75); }
