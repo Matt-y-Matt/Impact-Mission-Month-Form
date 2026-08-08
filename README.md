@@ -41,7 +41,15 @@ form title, description, each date's label, each option's name and capacity, and
 line shown under each date heading.
 
 The **description** and the **per-date lines** support `**bold**` — wrap words in double
-stars. Any HTML typed into these fields is escaped, so the stars are the only formatting
+stars. The description additionally understands:
+
+| You type | You get |
+|---|---|
+| a blank line between blocks | a new paragraph, with a full gap |
+| a single line break | the next line, kept tight against the one above |
+| lines starting with `- ` | a tight bullet list |
+
+Any HTML typed into these fields is escaped, so the above is the only formatting
 available (and the only markup that can reach the page).
 
 Admin → Settings also has a **Testing** section that deletes every registration and

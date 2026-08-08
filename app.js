@@ -57,6 +57,23 @@ const extraLine = (r) => (A()?.fields || [])
 // only markup that survives is the <strong> we add here.
 const richText = (s) => esc(s).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 
+/* The description supports three shapes, all typed as plain text:
+     blank line      -> new paragraph (a full gap)
+     single newline  -> next line, tight against the one above
+     lines from "- " -> a tight bullet list                                */
+function descHtml(text) {
+  return (text || '').split(/\n\s*\n/).map((block) => {
+    const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) return '';
+    // "-" and "•" only: "*" would collide with the **bold** markers.
+    if (lines.every((l) => /^[-•]\s+/.test(l))) {
+      return `<ul class="hero-list">${lines
+        .map((l) => `<li>${richText(l.replace(/^[-•]\s+/, ''))}</li>`).join('')}</ul>`;
+    }
+    return `<p>${lines.map(richText).join('<br>')}</p>`;
+  }).join('');
+}
+
 /* ---------- public data ---------- */
 
 async function loadPublic() {
@@ -284,7 +301,7 @@ function renderExtraFields(fields) {
 function renderForm() {
   const pub = S.pub;
   if (!pub) return '<div class="loading">Loading…</div>';
-  const paras = (pub.description || '').split(/\n\s*\n/).map((t) => `<p>${richText(t)}</p>`).join('');
+  const paras = descHtml(pub.description);
 
   const dates = pub.dates.map((d) => {
     const sel = S.sel[d.id] || {};
@@ -717,8 +734,10 @@ function renderAdminSettings() {
     <h2>Form content</h2>
     <label class="set-label">FORM TITLE</label>
     <input class="set-input" data-set="config-title" value="${esc(a.config.title)}">
-    <label class="set-label">DESCRIPTION (blank line = new paragraph · wrap words in **stars** to bold them)</label>
-    <textarea class="set-input" data-set="config-desc" rows="6">${esc(a.config.description)}</textarea>
+    <label class="set-label">DESCRIPTION</label>
+    <textarea class="set-input" style="margin-bottom:8px;" data-set="config-desc" rows="8">${esc(a.config.description)}</textarea>
+    <p class="hint" style="margin:0;">Blank line = new paragraph &nbsp;·&nbsp; single line break = next line, kept close
+    &nbsp;·&nbsp; start lines with <strong>-</strong> for a tight bullet list &nbsp;·&nbsp; <strong>**stars**</strong> = bold</p>
   </div>
   ${dates}
   <button class="btn-dashed wide" data-act="set-add-date">+ Add date</button>
