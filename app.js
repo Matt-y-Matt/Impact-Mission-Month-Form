@@ -214,7 +214,7 @@ async function downloadCsv() {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'saturday-serve-registrations.csv';
+    a.download = 'mission-month-registrations.csv';
     a.click();
     URL.revokeObjectURL(a.href);
   } catch (e) {
