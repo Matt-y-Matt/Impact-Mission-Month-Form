@@ -49,7 +49,12 @@ h1, h2, .brico { font-family: 'Bricolage Grotesque', serif; }
 .date-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
 .date-head h2 { margin: 0; font-weight: 700; font-size: 20px; }
 .date-sel { font-size: 12.5px; font-weight: 600; }
-.date-hint { margin: 0 0 16px; font-size: 13px; color: #6B7263; }
+/* Deliberately loud: this line is meant to shape the choice, not read as
+   fine print. Accent bar + tinted panel lifts it above the option cards. */
+.date-hint { margin: 2px 0 18px; font-size: 15px; line-height: 1.55; color: #22301F; font-weight: 600;
+  background: #F3F8F3; border: 1px solid #D9E6DA; border-left: 5px solid #2E5B3F;
+  border-radius: 0 11px 11px 0; padding: 12px 16px; }
+.date-hint strong { font-weight: 800; color: #A85433; }
 .all-full { background: #F9E7E2; border: 1px solid #EBC5BB; color: #A13B2A; border-radius: 10px; padding: 11px 14px; font-size: 13.5px; font-weight: 600; margin-bottom: 14px; }
 .opt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
 .opt-card { border-radius: 13px; padding: 15px 15px 13px; display: flex; flex-direction: column; gap: 9px; transition: border-color 0.15s; }
