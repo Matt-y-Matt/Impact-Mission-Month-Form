@@ -44,6 +44,17 @@ h1, h2, .brico { font-family: 'Bricolage Grotesque', serif; }
 .field input { width: 100%; padding: 11px 14px; border: 1.5px solid #D8D4C6; border-radius: 10px; font-size: 15px; background: #fff; color: #22301F; }
 .field input:focus, .search-input:focus, .set-input:focus, textarea:focus { border-color: #2E5B3F; outline: none; box-shadow: 0 0 0 3px rgba(46,91,63,0.14); }
 .field input.nric { letter-spacing: 0.15em; }
+.field label { text-transform: uppercase; }
+.field select { width: 100%; padding: 11px 14px; border: 1.5px solid #D8D4C6; border-radius: 10px; font-size: 15px; background: #fff; color: #22301F; appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23586052' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+.field select:focus { border-color: #2E5B3F; outline: none; box-shadow: 0 0 0 3px rgba(46,91,63,0.14); }
+.opt-tag { text-transform: none; font-weight: 500; color: #8A8F80; letter-spacing: 0; }
+
+.field-edit { border: 1px solid #E3E0D5; border-radius: 12px; padding: 16px; margin-bottom: 12px; background: #FCFBF7; }
+.field-edit .set-input { margin-bottom: 0; }
+.mini-select { padding: 7px 10px; border: 1.5px solid #D8D4C6; border-radius: 8px; font-size: 13px; background: #fff; color: #22301F; font-weight: 600; }
+.chip-btn[disabled] { opacity: 0.35; cursor: default; }
 
 .date-card { background: #fff; border: 1px solid #E3E0D5; border-radius: 16px; padding: 24px; margin-top: 18px; }
 .date-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }

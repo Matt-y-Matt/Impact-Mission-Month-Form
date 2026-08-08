@@ -26,6 +26,7 @@ const S = {
   pub: null,
   netError: '',
   fName: '', fEmail: '', fMobile: '', fNric: '',
+  extra: {}, // answers to the admin-defined questions, keyed by field id
   sel: {}, errors: [], submitError: '', submitting: false,
   doneRegs: [], doneName: '',
   admin: {
@@ -46,6 +47,11 @@ const fmtTs = (ts) => {
 };
 
 const shortName = (name) => (name || '—').split(' — ')[0];
+
+// "Lifenet 3 · BLS" — the custom-field answers for one registration, in form order.
+const extraLine = (r) => (A()?.fields || [])
+  .map((f) => (r.extra && r.extra[f.id]) ? esc(r.extra[f.id]) : null)
+  .filter(Boolean).join(' · ');
 
 // Renders **bold** markers in admin-editable copy. Escapes first, so the
 // only markup that survives is the <strong> we add here.
@@ -111,6 +117,13 @@ function validate() {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(S.fEmail.trim())) errs.push('Enter a valid email address.');
   if (!/^[\d\s+\-]{8,15}$/.test(S.fMobile.trim())) errs.push('Enter a valid mobile number.');
   if (!/^[a-zA-Z0-9]{4}$/.test(S.fNric.trim())) errs.push('NRIC field must be exactly 4 characters (e.g. 123A).');
+  for (const f of S.pub.fields || []) {
+    const v = (S.extra[f.id] || '').trim();
+    if (f.required && !v) errs.push(`${f.label} is required.`);
+    else if (f.type === 'select' && v && !(f.options || []).includes(v)) {
+      errs.push(`${f.label}: choose one of the listed options.`);
+    }
+  }
   const picked = S.pub.dates.filter((d) => { const c = S.sel[d.id]; return c && (c.p1 || c.p2); });
   if (!picked.length) errs.push('Select preferences for at least one Saturday.');
   for (const d of picked) {
@@ -133,10 +146,15 @@ async function doSubmit() {
     .filter((d) => { const c = S.sel[d.id]; return c && c.p1; })
     .map((d) => ({ date_id: d.id, p1: S.sel[d.id].p1, p2: S.sel[d.id].p2 || null }));
   try {
+    const extra = {};
+    for (const f of S.pub.fields || []) {
+      const v = (S.extra[f.id] || '').trim();
+      if (v) extra[f.id] = v;
+    }
     const res = await rpc('submit_registration', {
       p_name: S.fName.trim(), p_email: S.fEmail.trim(),
       p_mobile: S.fMobile.trim(), p_nric: S.fNric.trim().toUpperCase(),
-      p_entries: entries,
+      p_entries: entries, p_extra: extra,
     });
     if (!res.ok) {
       S.submitError = res.error || 'Submission failed. Please try again.';
@@ -247,6 +265,22 @@ function renderHeader() {
   ${S.netError ? `<div class="net-err">${esc(S.netError)}</div>` : ''}`;
 }
 
+// Admin-defined questions, rendered alongside the four built-in particulars.
+function renderExtraFields(fields) {
+  return fields.map((f) => {
+    const val = S.extra[f.id] || '';
+    const optional = f.required ? '' : ' <span class="opt-tag">(optional)</span>';
+    const control = f.type === 'select'
+      ? `<select data-xfield="${esc(f.id)}">
+           <option value=""${val ? '' : ' selected'}>Select…</option>
+           ${(f.options || []).map((o) =>
+             `<option value="${esc(o)}"${o === val ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+         </select>`
+      : `<input data-xfield="${esc(f.id)}" value="${esc(val)}" placeholder="${esc(f.placeholder || '')}">`;
+    return `<div class="field"><label>${esc(f.label)}${optional}</label>${control}</div>`;
+  }).join('');
+}
+
 function renderForm() {
   const pub = S.pub;
   if (!pub) return '<div class="loading">Loading…</div>';
@@ -333,6 +367,7 @@ function renderForm() {
         <div class="field"><label>EMAIL ADDRESS</label><input data-field="fEmail" value="${esc(S.fEmail)}" placeholder="you@example.com" type="email"></div>
         <div class="field"><label>MOBILE NUMBER</label><input data-field="fMobile" value="${esc(S.fMobile)}" placeholder="e.g. 9123 4567" type="tel"></div>
         <div class="field"><label>LAST 4 DIGITS/CHARACTERS OF NRIC</label><input data-field="fNric" class="nric" value="${esc(S.fNric)}" placeholder="e.g. 123A" maxlength="4"></div>
+        ${renderExtraFields(pub.fields || [])}
       </div>
     </div>
     ${dates}
@@ -379,6 +414,8 @@ function renderReview() {
     <div class="review-card" style="padding:18px 20px;">
       <div style="font-weight:700;font-size:15px;margin-bottom:6px;">${esc(S.fName)}</div>
       <div style="font-size:13.5px;color:#6B7263;">${esc([S.fEmail, S.fMobile, 'NRIC ***' + S.fNric.toUpperCase()].join(' · '))}</div>
+      ${(S.pub.fields || []).filter((f) => (S.extra[f.id] || '').trim()).map((f) =>
+        `<div style="font-size:13.5px;color:#6B7263;margin-top:4px;">${esc(f.label)} <strong style="color:#22301F;">${esc(S.extra[f.id])}</strong></div>`).join('')}
     </div>
     ${rows}
     ${S.submitError ? `<div class="submit-err">${esc(S.submitError)}</div>` : ''}
@@ -495,6 +532,7 @@ function renderAdminDash() {
               <div style="font-size:11px;color:#8A8F80;">${fmtTs(r.ts)}</div>
             </div>
             <div style="font-size:12px;color:#6B7263;margin-top:3px;">${esc(r.email)} · ${esc(r.mobile)}</div>
+            ${extraLine(r) ? `<div style="font-size:12px;color:#2E5B3F;margin-top:3px;font-weight:600;">${extraLine(r)}</div>` : ''}
             <div style="font-size:12px;margin-top:5px;color:#586052;">${pc.prefLine}</div>
             <div class="p-actions">
               ${pc.canMove ? `<button class="chip-btn move" data-act="adm-move" data-reg="${r.id}">Move to ${esc(shortName(pc.otherOpt.name))}</button>` : ''}
@@ -513,6 +551,7 @@ function renderAdminDash() {
               <div style="font-size:11px;color:#8A8F80;">${fmtTs(r.ts)}</div>
             </div>
             <div style="font-size:12px;color:#6B7263;margin-top:3px;">${esc(r.email)} · ${esc(r.mobile)}</div>
+            ${extraLine(r) ? `<div style="font-size:12px;color:#2E5B3F;margin-top:3px;font-weight:600;">${extraLine(r)}</div>` : ''}
             <div style="font-size:12px;margin-top:5px;color:#586052;">${pc.prefLine}</div>
             <div class="p-actions">
               ${rem > 0 ? `<button class="chip-btn promote" data-act="adm-promote" data-reg="${r.id}" data-opt="${opt.id}">Promote here</button>` : '<span style="font-size:11px;color:#A13B2A;font-weight:600;">Option full — release a slot first</span>'}
@@ -587,6 +626,7 @@ function renderAdminPeople() {
         <div style="font-size:11.5px;color:#8A8F80;">${fmtTs(r.ts)}</div>
       </div>
       <div style="font-size:12.5px;color:#6B7263;margin-top:4px;">${esc(r.email)} · ${esc(r.mobile)} · NRIC ***${esc(r.nric)}</div>
+      ${extraLine(r) ? `<div style="font-size:12.5px;color:#2E5B3F;margin-top:3px;font-weight:600;">${extraLine(r)}</div>` : ''}
       <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:9px;font-size:12.5px;">
         <span>1st: <strong>${esc(shortName(o1 ? o1.name : r.p1))}</strong> <span style="color:${c1};font-weight:700;">${s1}</span></span>
         <span>2nd: <strong>${o2 ? esc(shortName(o2.name)) : '—'}</strong> <span style="color:${c2};font-weight:700;">${s2}</span></span>
@@ -633,7 +673,46 @@ function renderAdminSettings() {
     </div>`;
   }).join('');
 
+  const fields = (a.fields || []).map((f, i, arr) => `
+    <div class="field-edit">
+      <div class="date-edit-row" style="margin-bottom:10px;">
+        <input data-set="field-label" data-fid="${esc(f.id)}" value="${esc(f.label)}">
+        <button class="chip-btn" data-act="field-move" data-fid="${esc(f.id)}" data-dir="up" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button class="chip-btn" data-act="field-move" data-fid="${esc(f.id)}" data-dir="down" ${i === arr.length - 1 ? 'disabled' : ''}>↓</button>
+        <button class="btn-remove-date" data-act="field-remove" data-fid="${esc(f.id)}" data-name="${esc(f.label)}">Remove</button>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <label style="font-size:12.5px;color:#586052;font-weight:600;display:flex;align-items:center;gap:6px;">
+          Answer type
+          <select class="mini-select" data-set="field-type" data-fid="${esc(f.id)}">
+            <option value="text"${f.type === 'text' ? ' selected' : ''}>Typed answer</option>
+            <option value="select"${f.type === 'select' ? ' selected' : ''}>Dropdown</option>
+          </select>
+        </label>
+        <label style="font-size:12.5px;color:#586052;font-weight:600;display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" data-set="field-required" data-fid="${esc(f.id)}"${f.required ? ' checked' : ''}>
+          Required
+        </label>
+      </div>
+      ${f.type === 'select'
+        ? `<label class="set-label">DROPDOWN CHOICES (one per line)</label>
+           <textarea class="set-input" rows="${Math.max(3, (f.options || []).length)}" data-set="field-options" data-fid="${esc(f.id)}">${esc((f.options || []).join('\n'))}</textarea>`
+        : `<label class="set-label">HINT TEXT SHOWN IN THE BOX (optional)</label>
+           <input class="set-input" data-set="field-placeholder" data-fid="${esc(f.id)}" value="${esc(f.placeholder || '')}">`}
+    </div>`).join('');
+
   return `
+  <div class="set-card">
+    <h2>Registration questions</h2>
+    <p class="hint" style="margin:0 0 14px;">Name, email, mobile and NRIC are always asked — they identify people and catch duplicates.
+    Add your own questions below; they appear in the "Your details" box and get their own column in the CSV export.</p>
+    ${fields || '<p class="hint" style="margin:0 0 12px;">No extra questions yet.</p>'}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
+      <button class="btn-dashed" data-act="field-add" data-type="text">+ Add typed question</button>
+      <button class="btn-dashed" data-act="field-add" data-type="select">+ Add dropdown question</button>
+    </div>
+  </div>
+
   <div class="set-card">
     <h2>Form content</h2>
     <label class="set-label">FORM TITLE</label>
@@ -731,7 +810,7 @@ document.addEventListener('click', async (ev) => {
   if (act === 'backToForm') { S.view = 'form'; S.submitError = ''; await loadPublic(); render(); return; }
   if (act === 'doSubmit') { doSubmit(); return; }
   if (act === 'registerAnother') {
-    Object.assign(S, { view: 'form', fName: '', fEmail: '', fMobile: '', fNric: '', sel: {}, doneRegs: [], errors: [] });
+    Object.assign(S, { view: 'form', fName: '', fEmail: '', fMobile: '', fNric: '', extra: {}, sel: {}, doneRegs: [], errors: [] });
     await loadPublic(); render(); window.scrollTo(0, 0); return;
   }
 
@@ -760,6 +839,12 @@ document.addEventListener('click', async (ev) => {
     if (!window.confirm(`Remove "${el.dataset.name}" and all its registrations?`)) return;
     adminAct('remove_date', { date: el.dataset.date }); return;
   }
+  if (act === 'field-add') { adminAct('add_field', { type: el.dataset.type }); return; }
+  if (act === 'field-remove') {
+    if (!window.confirm(`Remove the question "${el.dataset.name}"? People already registered keep their answer on record, but it stops being asked and leaves the CSV.`)) return;
+    adminAct('remove_field', { field: el.dataset.fid }); return;
+  }
+  if (act === 'field-move') { adminAct('move_field', { field: el.dataset.fid, dir: el.dataset.dir }); return; }
   if (act === 'set-add-date') { adminAct('add_date', {}); return; }
   if (act === 'set-add-opt') { adminAct('add_option', { date: el.dataset.date }); return; }
   if (act === 'set-remove-opt') {
@@ -814,8 +899,16 @@ document.addEventListener('input', (ev) => {
   S[f] = ev.target.value;
 });
 
+// Custom-field answers: text inputs fire input, dropdowns fire change
+document.addEventListener('input', (ev) => {
+  const x = ev.target.dataset.xfield;
+  if (x) S.extra[x] = ev.target.value;
+});
+
 // Settings inputs: save on change (blur / spinner click)
 document.addEventListener('change', (ev) => {
+  const x = ev.target.dataset.xfield;
+  if (x) { S.extra[x] = ev.target.value; return; }
   const setKey = ev.target.dataset.set;
   if (!setKey) return;
   if (setKey === 'config-title') adminAct('set_config', { title: ev.target.value });
@@ -824,6 +917,11 @@ document.addEventListener('change', (ev) => {
   else if (setKey === 'date-subtitle') adminAct('set_date_subtitle', { date: ev.target.dataset.date, subtitle: ev.target.value });
   else if (setKey === 'opt-name') adminAct('set_option', { opt: ev.target.dataset.opt, name: ev.target.value });
   else if (setKey === 'opt-cap') adminAct('set_option', { opt: ev.target.dataset.opt, capacity: Math.max(0, parseInt(ev.target.value || '0', 10)) });
+  else if (setKey === 'field-label') adminAct('set_field', { field: ev.target.dataset.fid, label: ev.target.value });
+  else if (setKey === 'field-type') adminAct('set_field', { field: ev.target.dataset.fid, type: ev.target.value });
+  else if (setKey === 'field-required') adminAct('set_field', { field: ev.target.dataset.fid, required: ev.target.checked });
+  else if (setKey === 'field-placeholder') adminAct('set_field', { field: ev.target.dataset.fid, placeholder: ev.target.value });
+  else if (setKey === 'field-options') adminAct('set_field', { field: ev.target.dataset.fid, options_text: ev.target.value });
 });
 
 // Enter key submits the admin login
