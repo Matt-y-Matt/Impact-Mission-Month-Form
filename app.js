@@ -1,4 +1,4 @@
-/* Saturday Serve — registration app backed by Supabase.
+/* Mission Month — registration app backed by Supabase.
    All data access goes through SECURITY DEFINER RPCs; admin RPCs require a passcode. */
 'use strict';
 
@@ -46,6 +46,10 @@ const fmtTs = (ts) => {
 };
 
 const shortName = (name) => (name || '—').split(' — ')[0];
+
+// Renders **bold** markers in admin-editable copy. Escapes first, so the
+// only markup that survives is the <strong> we add here.
+const richText = (s) => esc(s).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 
 /* ---------- public data ---------- */
 
@@ -232,8 +236,8 @@ function renderHeader() {
   return `
   <div class="topbar"><div class="topbar-inner">
     <div class="logo-row">
-      <div class="logo-mark">S</div>
-      <div class="logo-name">Saturday Serve</div>
+      <div class="logo-mark">M</div>
+      <div class="logo-name">Mission Month</div>
     </div>
     <div class="nav-pills">
       <button class="nav-pill ${onAdmin ? '' : 'on'}" data-act="nav-register">Register</button>
@@ -297,7 +301,7 @@ function renderForm() {
         <h2>${esc(d.label)}</h2>
         <span class="date-sel" style="color:${selColor};">${selText}</span>
       </div>
-      <p class="date-hint">Pick a 1st and 2nd choice — or leave blank to skip this Saturday.</p>
+      <p class="date-hint">${richText(d.subtitle || 'Pick a 1st and 2nd choice — or leave blank to skip this Saturday.')}</p>
       ${allFull ? '<div class="all-full">All options for this date are currently full.</div>' : ''}
       <div class="opt-grid">${opts}</div>
       ${warn ? `<div class="date-warn" style="background:${toneMap[tone][0]};border-color:${toneMap[tone][1]};color:${toneMap[tone][2]};">${warn}</div>` : ''}
@@ -622,6 +626,8 @@ function renderAdminSettings() {
         <input data-set="date-label" data-date="${d.id}" value="${esc(d.label)}">
         <button class="btn-remove-date" data-act="set-remove-date" data-date="${d.id}" data-name="${esc(d.label)}">Remove date</button>
       </div>
+      <label class="set-label">LINE UNDER THIS DATE (wrap words in **stars** to bold them)</label>
+      <input class="set-input" data-set="date-subtitle" data-date="${d.id}" value="${esc(d.subtitle || '')}">
       ${opts}
       <button class="btn-dashed" data-act="set-add-opt" data-date="${d.id}">+ Add option</button>
     </div>`;
@@ -656,6 +662,13 @@ function renderAdminSettings() {
       <input class="set-input" style="flex:1;min-width:220px;margin-bottom:0;" id="new-passcode" type="text" placeholder="New passcode">
       <button class="btn-main" style="flex:none;padding:12px 22px;font-size:14px;" data-act="set-passcode">Change passcode</button>
     </div>
+  </div>
+
+  <div class="set-card" style="border-color:#EBC5BB;">
+    <h2 style="color:#A13B2A;">Testing</h2>
+    <p class="hint" style="margin:0 0 12px;">Deletes <strong>every</strong> registration and restarts registration numbers at 1.
+    Your dates, options and capacities are kept. Use this to clear out test entries before going live — it cannot be undone.</p>
+    <button class="btn-ghost" style="flex:none;border-color:#EBC5BB;color:#A13B2A;padding:12px 22px;font-size:14px;" data-act="clear-registrations">Delete all registrations</button>
   </div>`;
 }
 
@@ -753,6 +766,15 @@ document.addEventListener('click', async (ev) => {
     if (!window.confirm(`Remove "${el.dataset.name}"? Registrations referencing it will keep it in history but lose the slot.`)) return;
     adminAct('remove_option', { opt: el.dataset.opt }); return;
   }
+  if (act === 'clear-registrations') {
+    if (!window.confirm('Delete ALL registrations? This cannot be undone. Dates, options and capacities are kept.')) return;
+    if (!window.confirm('Last check — permanently delete every registration?')) return;
+    const res = await rpc('admin_action', { p_code: S.admin.code, p_action: 'clear_registrations', p: {} });
+    if (res.ok) alert(`Deleted ${res.deleted} registration${res.deleted === 1 ? '' : 's'}. Numbering restarts at 1.`);
+    else alert(res.error || 'Could not clear registrations.');
+    await refreshAdmin(); await loadPublic(); render();
+    return;
+  }
   if (act === 'export-csv') { downloadCsv(); return; }
   if (act === 'copy-formula') {
     const txt = document.getElementById('sheets-formula').textContent;
@@ -799,6 +821,7 @@ document.addEventListener('change', (ev) => {
   if (setKey === 'config-title') adminAct('set_config', { title: ev.target.value });
   else if (setKey === 'config-desc') adminAct('set_config', { description: ev.target.value });
   else if (setKey === 'date-label') adminAct('set_date_label', { date: ev.target.dataset.date, label: ev.target.value });
+  else if (setKey === 'date-subtitle') adminAct('set_date_subtitle', { date: ev.target.dataset.date, subtitle: ev.target.value });
   else if (setKey === 'opt-name') adminAct('set_option', { opt: ev.target.dataset.opt, name: ev.target.value });
   else if (setKey === 'opt-cap') adminAct('set_option', { opt: ev.target.dataset.opt, capacity: Math.max(0, parseInt(ev.target.value || '0', 10)) });
 });
