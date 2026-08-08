@@ -776,6 +776,70 @@ function renderAdmin() {
   </div>`;
 }
 
+/* ---------- DOM morphing ----------
+   Replacing innerHTML on every click rebuilt the whole page: the fade-in
+   animation replayed, scroll jumped and focus was lost. Instead we patch the
+   existing DOM in place and touch only what actually changed. */
+
+const FORM_TAGS = { INPUT: 1, TEXTAREA: 1, SELECT: 1 };
+
+function syncAttrs(oldEl, newEl) {
+  for (const a of Array.from(oldEl.attributes)) {
+    if (!newEl.hasAttribute(a.name)) oldEl.removeAttribute(a.name);
+  }
+  for (const a of Array.from(newEl.attributes)) {
+    if (oldEl.getAttribute(a.name) !== a.value) oldEl.setAttribute(a.name, a.value);
+  }
+}
+
+function syncFormValue(oldEl, newEl) {
+  // Never fight the person typing — only push values into unfocused controls.
+  if (oldEl === document.activeElement) return;
+  if (oldEl.tagName === 'INPUT') {
+    if (oldEl.type === 'checkbox' || oldEl.type === 'radio') {
+      oldEl.checked = newEl.hasAttribute('checked');
+    } else {
+      const v = newEl.getAttribute('value') ?? '';
+      if (oldEl.value !== v) oldEl.value = v;
+    }
+  } else if (oldEl.tagName === 'TEXTAREA') {
+    if (oldEl.value !== newEl.textContent) oldEl.value = newEl.textContent;
+  } else if (oldEl.tagName === 'SELECT') {
+    const sel = Array.from(newEl.options).find((o) => o.hasAttribute('selected'));
+    const v = sel ? sel.value : '';
+    if (oldEl.value !== v) oldEl.value = v;
+  }
+}
+
+function morphNode(oldNode, newNode, parent) {
+  if (oldNode.nodeType !== newNode.nodeType || oldNode.nodeName !== newNode.nodeName) {
+    parent.replaceChild(newNode, oldNode);
+    return;
+  }
+  if (oldNode.nodeType === Node.TEXT_NODE || oldNode.nodeType === Node.COMMENT_NODE) {
+    if (oldNode.nodeValue !== newNode.nodeValue) oldNode.nodeValue = newNode.nodeValue;
+    return;
+  }
+  if (oldNode.nodeType !== Node.ELEMENT_NODE) return;
+  syncAttrs(oldNode, newNode);
+  morphChildren(oldNode, newNode);
+  if (FORM_TAGS[oldNode.tagName]) syncFormValue(oldNode, newNode);
+}
+
+function morphChildren(oldParent, newParent) {
+  const oldKids = Array.from(oldParent.childNodes);
+  const newKids = Array.from(newParent.childNodes);
+  const n = Math.max(oldKids.length, newKids.length);
+  for (let i = 0; i < n; i++) {
+    const o = oldKids[i], nk = newKids[i];
+    if (!nk) { oldParent.removeChild(o); continue; }
+    if (!o) { oldParent.appendChild(nk); continue; }
+    morphNode(o, nk, oldParent);
+  }
+}
+
+let lastView = '';
+
 function render() {
   const app = document.getElementById('app');
   let body = '';
@@ -783,7 +847,12 @@ function render() {
   else if (S.view === 'review') body = renderReview();
   else if (S.view === 'done') body = renderDone();
   else body = renderAdmin();
-  app.innerHTML = renderHeader() + body;
+  const next = document.createElement('div');
+  next.innerHTML = renderHeader() + body;
+  // Moving between form/review/done/admin should still fade in, so rebuild
+  // there. Within a view we patch, which is what keeps clicks from stuttering.
+  if (S.view !== lastView) { app.textContent = ''; lastView = S.view; }
+  morphChildren(app, next);
 }
 
 /* ---------- events (delegated) ---------- */
@@ -885,14 +954,9 @@ document.addEventListener('input', (ev) => {
   const f = ev.target.dataset.field;
   if (!f) return;
   if (f === 'admin-q') {
+    // Morphing keeps the caret in the search box, so a normal render is fine.
     S.admin.q = ev.target.value;
-    const list = document.getElementById('people-list');
-    if (list) {
-      const html = renderAdminPeople();
-      const tmp = document.createElement('div');
-      tmp.innerHTML = html;
-      list.innerHTML = tmp.querySelector('#people-list').innerHTML;
-    }
+    render();
     return;
   }
   if (f === 'fNric') ev.target.value = ev.target.value.slice(0, 4);
