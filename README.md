@@ -38,9 +38,11 @@ exposed to the API at all. Change the passcode from **Admin → Settings** on th
 
 Everything visible on the form is editable from **Admin → Settings** without touching code:
 form title, description, each date's label, each option's name and capacity, and the
-line shown under each date heading. That per-date line supports `**bold**` — wrap words
-in double stars and they render bold. Any HTML typed into these fields is escaped, so
-the stars are the only formatting available (and the only markup that can reach the page).
+line shown under each date heading.
+
+The **description** and the **per-date lines** support `**bold**` — wrap words in double
+stars. Any HTML typed into these fields is escaped, so the stars are the only formatting
+available (and the only markup that can reach the page).
 
 Admin → Settings also has a **Testing** section that deletes every registration and
 restarts registration numbering at 1, leaving dates and capacities intact.

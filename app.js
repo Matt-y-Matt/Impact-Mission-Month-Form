@@ -284,7 +284,7 @@ function renderExtraFields(fields) {
 function renderForm() {
   const pub = S.pub;
   if (!pub) return '<div class="loading">Loading…</div>';
-  const paras = (pub.description || '').split(/\n\s*\n/).map((t) => `<p>${esc(t)}</p>`).join('');
+  const paras = (pub.description || '').split(/\n\s*\n/).map((t) => `<p>${richText(t)}</p>`).join('');
 
   const dates = pub.dates.map((d) => {
     const sel = S.sel[d.id] || {};
@@ -717,7 +717,7 @@ function renderAdminSettings() {
     <h2>Form content</h2>
     <label class="set-label">FORM TITLE</label>
     <input class="set-input" data-set="config-title" value="${esc(a.config.title)}">
-    <label class="set-label">DESCRIPTION (blank line = new paragraph)</label>
+    <label class="set-label">DESCRIPTION (blank line = new paragraph · wrap words in **stars** to bold them)</label>
     <textarea class="set-input" data-set="config-desc" rows="6">${esc(a.config.description)}</textarea>
   </div>
   ${dates}
