@@ -2,7 +2,11 @@
 
 Volunteer registration form + admin dashboard for September Saturday outreach events.
 
-- **Frontend**: static site (`index.html`, `styles.css`, `app.js`), deployed on Vercel.
+**Live site: https://saturday-serve-app.vercel.app** (admin area: same site → "Admin" tab, passcode-protected)
+
+- **Frontend**: static site (`index.html`, `styles.css`, `app.js`), deployed on Vercel
+  (project `saturday-serve-app`). Note: only the clean URL above is public — the
+  team-scoped `*-cofounder-6147s-projects.vercel.app` URLs sit behind Vercel's login.
 - **Database**: Supabase Postgres (project `saturday-serve`, ref `xjxktvnspmgvgixvqiji`, region `ap-southeast-1`).
 - **API**: all access goes through SQL functions (RPCs) — the tables themselves are not
   reachable with the public API key (row-level security is enabled with no policies).
