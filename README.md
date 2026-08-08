@@ -1,11 +1,11 @@
-# Saturday Serve — Registration Site
+# Mission Month — Registration Site
 
 Volunteer registration form + admin dashboard for September Saturday outreach events.
 
-**Live site: https://saturday-serve-app.vercel.app** (admin area: same site → "Admin" tab, passcode-protected)
+**Live site: https://mission-month.vercel.app** (admin area: same site → "Admin" tab, passcode-protected)
 
 - **Frontend**: static site (`index.html`, `styles.css`, `app.js`), deployed on Vercel
-  (project `saturday-serve-app`). Note: only the clean URL above is public — the
+  (project `mission-month`). Note: only the clean URL above is public — the
   team-scoped `*-cofounder-6147s-projects.vercel.app` URLs sit behind Vercel's login.
 - **Database**: Supabase Postgres (project `saturday-serve`, ref `xjxktvnspmgvgixvqiji`, region `ap-southeast-1`).
 - **API**: all access goes through SQL functions (RPCs) — the tables themselves are not
@@ -33,6 +33,17 @@ exposed to the API at all. Change the passcode from **Admin → Settings** on th
 - Duplicate protection: same email + same date is blocked; same name/mobile/NRIC combinations
   are flagged as possible duplicates for admin review.
 - Admins can move, release, promote, cancel, and edit dates/options/capacities live.
+
+## Editing copy
+
+Everything visible on the form is editable from **Admin → Settings** without touching code:
+form title, description, each date's label, each option's name and capacity, and the
+line shown under each date heading. That per-date line supports `**bold**` — wrap words
+in double stars and they render bold. Any HTML typed into these fields is escaped, so
+the stars are the only formatting available (and the only markup that can reach the page).
+
+Admin → Settings also has a **Testing** section that deletes every registration and
+restarts registration numbering at 1, leaving dates and capacities intact.
 
 ## Export / Google Sheets
 
