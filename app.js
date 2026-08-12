@@ -32,7 +32,7 @@ const S = {
   admin: {
     code: sessionStorage.getItem('ss_admin_code') || '',
     authed: false, checking: false, loginError: '',
-    tab: 'dash', state: null, open: null, q: '', histOpen: {},
+    tab: 'dash', state: null, open: null, backupOpen: null, q: '', histOpen: {},
   },
 };
 
@@ -101,19 +101,59 @@ const admOpt = (id) => {
 const admActive = () => (A()?.registrations || []).filter((r) => r.status === 'active');
 const admConfirmedCount = (optId) => admActive().filter((r) => r.confirmed === optId).length;
 const admRemaining = (opt) => Math.max(0, opt.capacity - admConfirmedCount(opt.id));
-const admWaitlist = (optId) => admActive()
-  .filter((r) => r.confirmed !== optId && (r.p1 === optId || r.p2 === optId))
-  .sort((a, b) => {
-    const ra = a.wl_rank && a.wl_rank[optId] != null ? a.wl_rank[optId] : null;
-    const rb = b.wl_rank && b.wl_rank[optId] != null ? b.wl_rank[optId] : null;
-    if (ra != null && rb != null) return ra - rb;
-    if (ra != null) return -1;
-    if (rb != null) return 1;
-    return a.ts - b.ts;
-  });
+/* Who is actually queueing for an option: the people whose FIRST choice it is
+   and who aren't in it. A 2nd choice is interest, not a place in a queue —
+   counting it made every option look besieged when nobody was waiting. */
+const byQueue = (optId) => (a, b) => {
+  const ra = a.wl_rank && a.wl_rank[optId] != null ? a.wl_rank[optId] : null;
+  const rb = b.wl_rank && b.wl_rank[optId] != null ? b.wl_rank[optId] : null;
+  if (ra != null && rb != null) return ra - rb;
+  if (ra != null) return -1;
+  if (rb != null) return 1;
+  return a.ts - b.ts;
+};
+const admWaiting = (optId) => admActive()
+  .filter((r) => r.p1 === optId && r.confirmed !== optId).sort(byQueue(optId));
+const admBackup = (optId) => admActive()
+  .filter((r) => r.p2 === optId && r.confirmed !== optId).sort((a, b) => a.ts - b.ts);
 const admWlPos = (optId, regId) => {
-  const i = admWaitlist(optId).findIndex((r) => r.id === regId);
+  const i = admWaiting(optId).findIndex((r) => r.id === regId);
   return i < 0 ? null : i + 1;
+};
+// One row per person per Saturday, so rows overcount people. Email is the key —
+// the same email can't register twice for one date.
+const admPeople = () => new Set(admActive().map((r) => (r.email || '').trim().toLowerCase()));
+
+/* ---------- where someone stands (the thing admins actually read) ---------- */
+
+const admMovedOn = (r) => {
+  const h = (r.history || []).filter((x) => /^Admin (moved|placed)/.test(x.text || '')).pop();
+  return h ? new Date(Number(h.ts)).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }) : null;
+};
+
+/* Four states, and — for the two that need explaining — why they're in it.
+   "Waiting for 1st" covers both a full option at sign-up and a deliberate
+   admin move; the note is what tells them apart. */
+function placement(r) {
+  if (r.status !== 'active') return { kind: 'cancelled', label: 'CANCELLED', c: '#8A8F80', bg: '#F0EEE6', note: '' };
+  if (!r.confirmed) {
+    return { kind: 'none', label: 'NOT PLACED', c: '#A13B2A', bg: '#F9E7E2',
+      note: 'Slot was released — they are not in any team for this Saturday.' };
+  }
+  if (r.confirmed === r.p1) return { kind: 'first', label: '1ST CHOICE', c: '#256B43', bg: '#E7F2E9', note: '' };
+  const day = admMovedOn(r);
+  return { kind: 'waiting', label: 'WAITING FOR 1ST', c: '#9A5B14', bg: '#FBEEDD',
+    note: r.placed_by_admin
+      ? `Team balancing — an admin moved them here${day ? ` on ${day}` : ''}.`
+      : '1st choice was full when they signed up.' };
+}
+
+// Their 1st choice has room again AND nobody deliberately put them elsewhere.
+// Without the second half, every balancing move would immediately nag us to undo it.
+const canPlaceInFirst = (r) => {
+  if (r.status !== 'active' || r.confirmed === r.p1 || r.placed_by_admin) return false;
+  const o = admOpt(r.p1);
+  return !!o && admRemaining(o) > 0;
 };
 
 /* ---------- form logic ---------- */
@@ -233,7 +273,7 @@ async function adminAct(action, payload) {
 }
 
 function reorderWl(optId, regId, dir) {
-  const wl = admWaitlist(optId);
+  const wl = admWaiting(optId);
   const i = wl.findIndex((r) => r.id === regId);
   const j = i + dir;
   if (i < 0 || j < 0 || j >= wl.length) return;
@@ -445,13 +485,16 @@ function renderReview() {
 
 function renderDone() {
   const rows = S.doneRegs.map((r) => {
-    const badge = (optId, wlKey) => {
-      if (r.confirmed === optId) return { t: 'CONFIRMED', bg: '#E7F2E9', c: '#256B43' };
-      const pos = r.wl_pos && r.wl_pos[wlKey];
-      return { t: `WAITLIST #${pos || '—'}`, bg: '#EEE9F8', c: '#6C4AB0' };
-    };
-    const b1 = badge(r.p1, 'p1');
-    const b2 = r.p2 ? badge(r.p2, 'p2') : { t: '—', bg: '#F0EEE6', c: '#8A8F80' };
+    const gotFirst = r.confirmed === r.p1;
+    const pos = r.wl_pos && r.wl_pos.p1;
+    // Got their 1st choice? Then the 2nd is a backup we hold, not a queue they
+    // are stuck in — telling them "waitlisted" for it would only worry them.
+    const b1 = gotFirst
+      ? { t: 'CONFIRMED', bg: '#E7F2E9', c: '#256B43' }
+      : { t: `WAITLIST #${pos || '—'}`, bg: '#EEE9F8', c: '#6C4AB0' };
+    const b2 = !r.p2 ? { t: '—', bg: '#F0EEE6', c: '#8A8F80' }
+      : gotFirst ? { t: 'BACKUP CHOICE', bg: '#F0EEE6', c: '#6B7263' }
+      : { t: 'CONFIRMED', bg: '#E7F2E9', c: '#256B43' };
     return `
     <div class="review-card">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
@@ -480,43 +523,80 @@ function renderDone() {
       <p style="margin:0;font-size:14px;color:#6B7263;">Thank you, ${esc(S.doneName)} — see you in September!</p>
     </div>
     ${rows}
-    <p class="done-note">Your second preference has been retained so that the organisers can consider it if allocations are adjusted later. You will be contacted if a waitlisted spot opens up.</p>
+    <p class="done-note">${S.doneRegs.some((r) => r.confirmed !== r.p1)
+      ? 'Where your first choice was already full we have confirmed your second choice and kept you on the waitlist for your first — we will contact you if a place opens up.'
+      : 'You are in your first choice for every Saturday above. Your second choices are kept as backups in case the organisers need to rebalance teams.'}</p>
     <button class="btn-ghost" style="margin-top:10px;width:100%;font-size:14px;padding:13px;" data-act="registerAnother">Register another person</button>
   </div>`;
 }
 
 /* ---------- admin rendering ---------- */
 
-function personCardHtml(r, extraActions) {
+// The two lines every person card shows: their choices, and where they landed.
+function personCardHtml(r) {
   const o1 = admOpt(r.p1), o2 = r.p2 ? admOpt(r.p2) : null;
-  const st = (oid) => r.confirmed === oid ? '✓ confirmed' : (oid ? `waitlist #${admWlPos(oid, r.id) || '—'}` : '');
-  const prefLine = `1st: ${esc(shortName(o1 ? o1.name : r.p1))} (${st(r.p1)}) · 2nd: ${o2 ? esc(shortName(o2.name)) : '—'}${o2 ? ` (${st(r.p2)})` : ''}`;
+  const pl = placement(r);
+  const prefLine = `1st: ${esc(shortName(o1 ? o1.name : r.p1))} · 2nd: ${o2 ? esc(shortName(o2.name)) : '—'}`;
   const other = r.confirmed === r.p1 ? r.p2 : r.p1;
   const otherOpt = other ? admOpt(other) : null;
   const canMove = !!(r.confirmed && otherOpt && admRemaining(otherOpt) > 0);
-  return { o1, o2, prefLine, canMove, otherOpt, html: extraActions };
+  const moveLabel = otherOpt
+    ? (other === r.p1 ? `↩ Back to 1st: ${shortName(otherOpt.name)}` : `Move to 2nd: ${shortName(otherOpt.name)}`)
+    : '';
+  return { o1, o2, pl, prefLine, canMove, otherOpt, moveLabel };
 }
+
+const placeBadge = (pl) => `<span class="badge" style="background:${pl.bg};color:${pl.c};">${pl.label}</span>`;
+const placeNote = (pl) => pl.note ? `<div class="place-note" style="color:${pl.c};">${esc(pl.note)}</div>` : '';
 
 function renderAdminDash() {
   const a = A();
   const active = admActive();
-  const statWl = active.reduce((n, r) =>
-    n + ((r.p1 && r.confirmed !== r.p1) ? 1 : 0) + ((r.p2 && r.confirmed !== r.p2) ? 1 : 0), 0);
+  const placedElsewhere = active.filter((r) => placement(r).kind === 'waiting');
+  const unplaced = active.filter((r) => placement(r).kind === 'none');
+  const movable = active.filter(canPlaceInFirst);
 
   const stats = `
   <div class="stats">
-    <div class="stat"><div class="n">${a.registrations.length}</div><div class="l">Registrations</div></div>
-    <div class="stat"><div class="n" style="color:#2E5B3F;">${active.filter((r) => r.confirmed).length}</div><div class="l">Confirmed</div></div>
-    <div class="stat"><div class="n" style="color:#6C4AB0;">${statWl}</div><div class="l">Waitlist entries</div></div>
+    <div class="stat"><div class="n">${admPeople().size}</div><div class="l">People signed up</div></div>
+    <div class="stat"><div class="n" style="color:#2E5B3F;">${active.filter((r) => r.confirmed).length}</div><div class="l">Saturday places taken</div></div>
+    <div class="stat"><div class="n" style="color:#9A5B14;">${placedElsewhere.length}</div><div class="l">Not in their 1st choice</div></div>
+    <div class="stat"><div class="n" style="color:#2E5B3F;">${movable.length}</div><div class="l">Can be placed now</div></div>
     <div class="stat"><div class="n" style="color:#B0691C;">${active.filter((r) => r.dup_flag).length}</div><div class="l">Flagged duplicates</div></div>
   </div>`;
+
+  // Only rows the system bumped show up here. A move we made on purpose is not
+  // a problem to fix, so it never nags — it just carries its note.
+  const banner = (movable.length || unplaced.length) ? `
+  <div class="banner">
+    <div class="banner-head">${movable.length
+      ? `${movable.length} ${movable.length === 1 ? 'person can' : 'people can'} now go into their 1st choice`
+      : `${unplaced.length} ${unplaced.length === 1 ? 'person needs' : 'people need'} placing`}</div>
+    <p class="banner-sub">Their 1st choice was full when they signed up and has room again. Anyone you moved for team balancing is left alone.</p>
+    ${movable.concat(unplaced.filter((r) => !movable.includes(r))).map((r) => {
+      const o1 = admOpt(r.p1);
+      const date = a.dates.find((d) => d.id === r.date_id);
+      const room = o1 && admRemaining(o1) > 0;
+      return `
+      <div class="banner-row">
+        <div>
+          <strong>${esc(r.name)}</strong>
+          <span class="banner-meta">${esc((date ? date.label : r.date_id).replace('Saturday, ', ''))} · wants ${esc(shortName(o1 ? o1.name : r.p1))}</span>
+        </div>
+        ${room
+          ? `<button class="chip-btn promote" data-act="adm-promote" data-reg="${r.id}" data-opt="${esc(r.p1)}">Place in 1st choice</button>`
+          : '<span class="banner-meta">1st choice full</span>'}
+      </div>`;
+    }).join('')}
+  </div>` : '';
 
   const dates = a.dates.map((d) => {
     const opts = d.options.map((o) => {
       const conf = admConfirmedCount(o.id);
       const rem = Math.max(0, o.capacity - conf);
-      const b = optionBadge(rem);
-      const wl = admWaitlist(o.id).length;
+      // Volunteers see "FULL — WAITLIST"; we just need to know it's full.
+      const b = Object.assign({}, optionBadge(rem), rem <= 0 ? { t: 'FULL' } : {});
+      const wl = admWaiting(o.id).length;
       const pct = Math.min(100, Math.round(conf / Math.max(1, o.capacity) * 100));
       const open = S.admin.open && S.admin.open.opt === o.id;
       return `
@@ -527,8 +607,8 @@ function renderAdminDash() {
         </div>
         <div class="meter"><div style="width:${pct}%;background:${b.bar};"></div></div>
         <div style="display:flex;justify-content:space-between;font-size:12.5px;color:#6B7263;">
-          <span>Confirmed <strong style="color:#22301F;">${conf} / ${o.capacity}</strong></span>
-          <span>Waitlist <strong style="color:#6C4AB0;">${wl}</strong></span>
+          <span>Serving <strong style="color:#22301F;">${conf} / ${o.capacity}</strong></span>
+          <span>Waiting <strong style="color:${wl ? '#9A5B14' : '#8A8F80'};">${wl}</strong></span>
         </div>
       </div>`;
     }).join('');
@@ -538,45 +618,70 @@ function renderAdminDash() {
       const opt = d.options.find((o) => o.id === S.admin.open.opt);
       if (opt) {
         const rem = admRemaining(opt);
-        const confirmed = active.filter((r) => r.confirmed === opt.id).sort((x, y) => x.ts - y.ts);
-        const wl = admWaitlist(opt.id);
-        const confHtml = confirmed.map((r) => {
+        const serving = active.filter((r) => r.confirmed === opt.id).sort((x, y) => x.ts - y.ts);
+        const waiting = admWaiting(opt.id);
+        const backup = admBackup(opt.id);
+
+        // Shared top of every person card in the detail panel.
+        const who = (r) => `
+          <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+            <div style="font-weight:700;font-size:13.5px;">${esc(r.name)} <span style="font-weight:500;color:#8A8F80;font-size:11.5px;">· NRIC ***${esc(r.nric)}</span></div>
+            <div style="font-size:11px;color:#8A8F80;">${fmtTs(r.ts)}</div>
+          </div>
+          <div style="font-size:12px;color:#6B7263;margin-top:3px;">${esc(r.email)} · ${esc(r.mobile)}</div>
+          ${extraLine(r) ? `<div style="font-size:12px;color:#2E5B3F;margin-top:3px;font-weight:600;">${extraLine(r)}</div>` : ''}`;
+
+        const servingHtml = serving.map((r) => {
           const pc = personCardHtml(r);
           return `
           <div class="person">
-            <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-              <div style="font-weight:700;font-size:13.5px;">${esc(r.name)} <span style="font-weight:500;color:#8A8F80;font-size:11.5px;">· NRIC ***${esc(r.nric)}</span></div>
-              <div style="font-size:11px;color:#8A8F80;">${fmtTs(r.ts)}</div>
+            ${who(r)}
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+              ${placeBadge(pc.pl)}<span style="font-size:12px;color:#586052;">${pc.prefLine}</span>
             </div>
-            <div style="font-size:12px;color:#6B7263;margin-top:3px;">${esc(r.email)} · ${esc(r.mobile)}</div>
-            ${extraLine(r) ? `<div style="font-size:12px;color:#2E5B3F;margin-top:3px;font-weight:600;">${extraLine(r)}</div>` : ''}
-            <div style="font-size:12px;margin-top:5px;color:#586052;">${pc.prefLine}</div>
+            ${placeNote(pc.pl)}
             <div class="p-actions">
-              ${pc.canMove ? `<button class="chip-btn move" data-act="adm-move" data-reg="${r.id}">Move to ${esc(shortName(pc.otherOpt.name))}</button>` : ''}
+              ${pc.canMove ? `<button class="chip-btn move" data-act="adm-move" data-reg="${r.id}">${esc(pc.moveLabel)}</button>` : ''}
               <button class="chip-btn" data-act="adm-release" data-reg="${r.id}">Release slot</button>
               <button class="chip-btn danger" data-act="adm-cancel" data-reg="${r.id}" data-name="${esc(r.name)}">Cancel</button>
             </div>
           </div>`;
-        }).join('') || '<div style="font-size:13px;color:#8A8F80;padding:8px 0;">No confirmed participants yet.</div>';
+        }).join('') || '<div style="font-size:13px;color:#8A8F80;padding:8px 0;">Nobody serving here yet.</div>';
 
-        const wlHtml = wl.map((r, i) => {
+        const waitingHtml = waiting.map((r, i) => {
           const pc = personCardHtml(r);
+          const at = r.confirmed ? admOpt(r.confirmed) : null;
           return `
           <div class="person wl">
             <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-              <div style="font-weight:700;font-size:13.5px;"><span style="color:#6C4AB0;">#${i + 1}</span> ${esc(r.name)} <span style="font-weight:500;color:#8A8F80;font-size:11.5px;">· NRIC ***${esc(r.nric)}</span></div>
+              <div style="font-weight:700;font-size:13.5px;"><span style="color:#9A5B14;">#${i + 1}</span> ${esc(r.name)} <span style="font-weight:500;color:#8A8F80;font-size:11.5px;">· NRIC ***${esc(r.nric)}</span></div>
               <div style="font-size:11px;color:#8A8F80;">${fmtTs(r.ts)}</div>
             </div>
             <div style="font-size:12px;color:#6B7263;margin-top:3px;">${esc(r.email)} · ${esc(r.mobile)}</div>
             ${extraLine(r) ? `<div style="font-size:12px;color:#2E5B3F;margin-top:3px;font-weight:600;">${extraLine(r)}</div>` : ''}
-            <div style="font-size:12px;margin-top:5px;color:#586052;">${pc.prefLine}</div>
+            <div style="font-size:12px;margin-top:5px;color:#586052;">Currently in: <strong>${at ? esc(shortName(at.name)) : 'nothing — not placed'}</strong></div>
+            ${placeNote(pc.pl)}
             <div class="p-actions">
-              ${rem > 0 ? `<button class="chip-btn promote" data-act="adm-promote" data-reg="${r.id}" data-opt="${opt.id}">Promote here</button>` : '<span style="font-size:11px;color:#A13B2A;font-weight:600;">Option full — release a slot first</span>'}
+              ${rem > 0 ? `<button class="chip-btn promote" data-act="adm-promote" data-reg="${r.id}" data-opt="${opt.id}">Place here</button>` : '<span style="font-size:11px;color:#A13B2A;font-weight:600;">Full — release a slot first</span>'}
               <button class="chip-btn" data-act="adm-wl-up" data-reg="${r.id}" data-opt="${opt.id}">↑</button>
               <button class="chip-btn" data-act="adm-wl-down" data-reg="${r.id}" data-opt="${opt.id}">↓</button>
             </div>
           </div>`;
-        }).join('') || '<div style="font-size:13px;color:#8A8F80;padding:8px 0;">Waitlist is empty.</div>';
+        }).join('') || '<div style="font-size:13px;color:#8A8F80;padding:8px 0;">Nobody is waiting for this one.</div>';
+
+        const backupOpen = S.admin.backupOpen === opt.id;
+        const backupHtml = backup.map((r) => {
+          const at = r.confirmed ? admOpt(r.confirmed) : null;
+          return `
+          <div class="person backup">
+            <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+              <div style="font-weight:700;font-size:13px;">${esc(r.name)}</div>
+              <div style="font-size:11px;color:#8A8F80;">${esc(r.email)}</div>
+            </div>
+            <div style="font-size:12px;color:#6B7263;margin-top:3px;">Serving in <strong>${at ? esc(shortName(at.name)) : '— not placed'}</strong> · listed this as their 2nd choice</div>
+            ${rem > 0 ? `<div class="p-actions"><button class="chip-btn" data-act="adm-promote" data-reg="${r.id}" data-opt="${opt.id}">Move here instead</button></div>` : ''}
+          </div>`;
+        }).join('');
 
         detail = `
         <div class="detail">
@@ -586,14 +691,22 @@ function renderAdminDash() {
           </div>
           <div class="detail-cols">
             <div class="detail-col">
-              <div style="font-size:12px;font-weight:800;letter-spacing:0.06em;color:#256B43;margin-bottom:8px;">CONFIRMED (${confirmed.length} / ${opt.capacity})</div>
-              ${confHtml}
+              <div class="col-head" style="color:#256B43;">SERVING HERE (${serving.length} / ${opt.capacity})</div>
+              ${servingHtml}
             </div>
             <div class="detail-col">
-              <div style="font-size:12px;font-weight:800;letter-spacing:0.06em;color:#6C4AB0;margin-bottom:8px;">WAITLIST (${wl.length})</div>
-              ${wlHtml}
+              <div class="col-head" style="color:#9A5B14;">WAITING FOR THIS SPOT (${waiting.length})</div>
+              <p class="col-hint">Chose this first, didn't get in.</p>
+              ${waitingHtml}
             </div>
           </div>
+          ${backup.length ? `
+          <div class="backup-block">
+            <button class="backup-toggle" data-act="adm-backup" data-opt="${opt.id}">
+              ${backupOpen ? '▾' : '▸'} Backup interest (${backup.length}) — happy where they are, listed this second
+            </button>
+            ${backupOpen ? backupHtml : ''}
+          </div>` : ''}
         </div>`;
       }
     }
@@ -606,60 +719,88 @@ function renderAdminDash() {
     </div>`;
   }).join('');
 
-  return stats + dates;
+  return stats + banner + dates;
+}
+
+/* One card per PERSON, with their Saturdays inside it. A row per registration
+   made six volunteers look like seventeen sign-ups. */
+function admGroupPeople() {
+  const a = A();
+  const order = new Map(a.dates.map((d, i) => [d.id, i]));
+  const people = new Map();
+  for (const r of a.registrations) {
+    const key = (r.email || '').trim().toLowerCase() || r.id;
+    if (!people.has(key)) people.set(key, { key, regs: [], last: 0, dup: false });
+    const p = people.get(key);
+    p.regs.push(r);
+    if (r.dup_flag) p.dup = true;
+    if (r.ts >= p.last) { p.last = r.ts; p.name = r.name; p.email = r.email; p.mobile = r.mobile; p.nric = r.nric; p.extraOf = r; }
+  }
+  for (const p of people.values()) {
+    p.regs.sort((x, y) => (order.get(x.date_id) ?? 99) - (order.get(y.date_id) ?? 99));
+    p.active = p.regs.filter((r) => r.status === 'active');
+  }
+  return [...people.values()].sort((x, y) => y.last - x.last);
 }
 
 function renderAdminPeople() {
   const a = A();
   const q = (S.admin.q || '').trim().toLowerCase();
-  const matches = (r) => !q || [r.name, r.email, r.mobile, r.nric, r.reg_id].some((x) => (x || '').toLowerCase().includes(q));
-  const rows = a.registrations.filter(matches).sort((x, y) => y.ts - x.ts);
+  const hit = (p) => !q || [p.name, p.email, p.mobile, p.nric].concat(p.regs.map((r) => r.reg_id))
+    .some((x) => (x || '').toLowerCase().includes(q));
+  const people = admGroupPeople().filter(hit);
 
-  const list = rows.map((r) => {
-    const o1 = admOpt(r.p1), o2 = r.p2 ? admOpt(r.p2) : null;
-    const date = a.dates.find((d) => d.id === r.date_id);
-    const st = (oid) => {
-      if (r.status !== 'active') return ['—', '#8A8F80'];
-      if (r.confirmed === oid) return ['CONFIRMED', '#256B43'];
-      return [`WAITLIST #${admWlPos(oid, r.id) || '—'}`, '#6C4AB0'];
-    };
-    const [s1, c1] = st(r.p1), [s2, c2] = o2 ? st(r.p2) : ['—', '#8A8F80'];
-    const other = r.confirmed === r.p1 ? r.p2 : r.p1;
-    const otherOpt = other ? admOpt(other) : null;
-    const canMove = !!(r.confirmed && otherOpt && admRemaining(otherOpt) > 0);
-    const hist = S.admin.histOpen[r.id] ? `
-      <div class="hist">${(r.history || []).map((h) =>
-        `<div class="hist-row"><span style="color:#8A8F80;">${fmtTs(h.ts)}</span> — ${esc(h.text)}</div>`).join('')}
-      </div>` : '';
+  const list = people.map((p) => {
+    const rows = p.regs.map((r) => {
+      const pc = personCardHtml(r);
+      const date = a.dates.find((d) => d.id === r.date_id);
+      const at = r.confirmed ? admOpt(r.confirmed) : null;
+      const hist = S.admin.histOpen[r.id] ? `
+        <div class="hist">${(r.history || []).map((h) =>
+          `<div class="hist-row"><span style="color:#8A8F80;">${fmtTs(h.ts)}</span> — ${esc(h.text)}</div>`).join('')}
+        </div>` : '';
+      return `
+      <div class="sat-row">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;">
+          <div style="font-weight:700;font-size:13.5px;">${esc((date ? date.label : r.date_id).replace('Saturday, ', ''))}
+            <span style="font-weight:500;font-size:11.5px;color:#8A8F80;margin-left:6px;">${esc(r.reg_id)}</span></div>
+          ${placeBadge(pc.pl)}
+        </div>
+        <div style="font-size:12.5px;color:#586052;margin-top:5px;">
+          Serving in <strong style="color:#256B43;">${at ? esc(shortName(at.name)) : '— not placed'}</strong>
+          <span style="color:#8A8F80;"> · ${pc.prefLine}</span>
+        </div>
+        ${placeNote(pc.pl)}
+        <div class="p-actions">
+          ${canPlaceInFirst(r) ? `<button class="chip-btn promote" data-act="adm-promote" data-reg="${r.id}" data-opt="${esc(r.p1)}">Place in 1st choice</button>` : ''}
+          ${pc.canMove ? `<button class="chip-btn move" data-act="adm-move" data-reg="${r.id}">${esc(pc.moveLabel)}</button>` : ''}
+          ${r.status === 'active' ? `<button class="chip-btn danger" data-act="adm-cancel" data-reg="${r.id}" data-name="${esc(r.name)}">Cancel</button>` : ''}
+          <button class="chip-btn" data-act="adm-hist" data-reg="${r.id}">History</button>
+        </div>
+        ${hist}
+      </div>`;
+    }).join('');
+
+    const n = p.active.length;
     return `
     <div class="people-row">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
         <div>
-          <span style="font-weight:700;font-size:14.5px;">${esc(r.name)}</span>
-          <span style="font-size:11.5px;color:#8A8F80;margin-left:8px;">${esc(r.reg_id)} · ${esc((date ? date.label : r.date_id).replace('Saturday, ', ''))}</span>
-          ${r.dup_flag ? '<span class="tag dup">POSSIBLE DUPLICATE</span>' : ''}
-          ${r.status === 'cancelled' ? '<span class="tag cancelled">CANCELLED</span>' : ''}
+          <span style="font-weight:700;font-size:15px;">${esc(p.name)}</span>
+          <span class="tag sats">${n} ${n === 1 ? 'SATURDAY' : 'SATURDAYS'}</span>
+          ${p.dup ? '<span class="tag dup">POSSIBLE DUPLICATE</span>' : ''}
         </div>
-        <div style="font-size:11.5px;color:#8A8F80;">${fmtTs(r.ts)}</div>
+        <div style="font-size:11.5px;color:#8A8F80;">Signed up ${fmtTs(p.last)}</div>
       </div>
-      <div style="font-size:12.5px;color:#6B7263;margin-top:4px;">${esc(r.email)} · ${esc(r.mobile)} · NRIC ***${esc(r.nric)}</div>
-      ${extraLine(r) ? `<div style="font-size:12.5px;color:#2E5B3F;margin-top:3px;font-weight:600;">${extraLine(r)}</div>` : ''}
-      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:9px;font-size:12.5px;">
-        <span>1st: <strong>${esc(shortName(o1 ? o1.name : r.p1))}</strong> <span style="color:${c1};font-weight:700;">${s1}</span></span>
-        <span>2nd: <strong>${o2 ? esc(shortName(o2.name)) : '—'}</strong> <span style="color:${c2};font-weight:700;">${s2}</span></span>
-        <span>Allocated: <strong style="color:#256B43;">${r.confirmed ? esc(shortName(admOpt(r.confirmed)?.name || r.confirmed)) : '—'}</strong></span>
-      </div>
-      <div class="p-actions" style="margin-top:9px;">
-        ${canMove ? `<button class="chip-btn move" data-act="adm-move" data-reg="${r.id}">Move to ${esc(shortName(otherOpt.name))}</button>` : ''}
-        ${r.status === 'active' ? `<button class="chip-btn danger" data-act="adm-cancel" data-reg="${r.id}" data-name="${esc(r.name)}">Cancel</button>` : ''}
-        <button class="chip-btn" data-act="adm-hist" data-reg="${r.id}">History</button>
-      </div>
-      ${hist}
+      <div style="font-size:12.5px;color:#6B7263;margin-top:4px;">${esc(p.email)} · ${esc(p.mobile)} · NRIC ***${esc(p.nric)}</div>
+      ${extraLine(p.extraOf) ? `<div style="font-size:12.5px;color:#2E5B3F;margin-top:3px;font-weight:600;">${extraLine(p.extraOf)}</div>` : ''}
+      ${rows}
     </div>`;
   }).join('');
 
   return `
   <input class="search-input" data-field="admin-q" value="${esc(S.admin.q)}" placeholder="Search by name, email, mobile, or last 4 NRIC…">
+  <div class="people-count">${people.length} ${people.length === 1 ? 'person' : 'people'}${q ? ' matching your search' : ' signed up'}</div>
   <div id="people-list">${list || '<div style="font-size:14px;color:#8A8F80;padding:20px 0;">No registrations match your search.</div>'}</div>`;
 }
 
@@ -673,7 +814,7 @@ function renderAdminSettings() {
         <div class="cap-group">
           <span class="cap-label">Capacity</span>
           <input class="cap" data-set="opt-cap" data-opt="${o.id}" type="number" min="0" value="${o.capacity}">
-          <span class="cap-usage">${admConfirmedCount(o.id)} confirmed · ${admWaitlist(o.id).length} waitlisted</span>
+          <span class="cap-usage">${admConfirmedCount(o.id)} serving · ${admWaiting(o.id).length} waiting</span>
         </div>
         <button class="btn-x" data-act="set-remove-opt" data-opt="${o.id}" data-name="${esc(o.name)}">✕</button>
       </div>`).join('');
@@ -760,13 +901,6 @@ function renderAdminSettings() {
       <input class="set-input" style="flex:1;min-width:220px;margin-bottom:0;" id="new-passcode" type="text" placeholder="New passcode">
       <button class="btn-main" style="flex:none;padding:12px 22px;font-size:14px;" data-act="set-passcode">Change passcode</button>
     </div>
-  </div>
-
-  <div class="set-card" style="border-color:#EBC5BB;">
-    <h2 style="color:#A13B2A;">Testing</h2>
-    <p class="hint" style="margin:0 0 12px;">Deletes <strong>every</strong> registration and restarts registration numbers at 1.
-    Your dates, options and capacities are kept. Use this to clear out test entries before going live — it cannot be undone.</p>
-    <button class="btn-ghost" style="flex:none;border-color:#EBC5BB;color:#A13B2A;padding:12px 22px;font-size:14px;" data-act="clear-registrations">Delete all registrations</button>
   </div>`;
 }
 
@@ -912,6 +1046,10 @@ document.addEventListener('click', async (ev) => {
     S.admin.open = { date: el.dataset.date, opt: el.dataset.opt }; render(); return;
   }
   if (act === 'adm-close') { S.admin.open = null; render(); return; }
+  if (act === 'adm-backup') {
+    S.admin.backupOpen = S.admin.backupOpen === el.dataset.opt ? null : el.dataset.opt;
+    render(); return;
+  }
   if (act === 'adm-move') { adminAct('move', { reg: el.dataset.reg }); return; }
   if (act === 'adm-release') { adminAct('release', { reg: el.dataset.reg }); return; }
   if (act === 'adm-cancel') {
@@ -938,15 +1076,6 @@ document.addEventListener('click', async (ev) => {
   if (act === 'set-remove-opt') {
     if (!window.confirm(`Remove "${el.dataset.name}"? Registrations referencing it will keep it in history but lose the slot.`)) return;
     adminAct('remove_option', { opt: el.dataset.opt }); return;
-  }
-  if (act === 'clear-registrations') {
-    if (!window.confirm('Delete ALL registrations? This cannot be undone. Dates, options and capacities are kept.')) return;
-    if (!window.confirm('Last check — permanently delete every registration?')) return;
-    const res = await rpc('admin_action', { p_code: S.admin.code, p_action: 'clear_registrations', p: {} });
-    if (res.ok) alert(`Deleted ${res.deleted} registration${res.deleted === 1 ? '' : 's'}. Numbering restarts at 1.`);
-    else alert(res.error || 'Could not clear registrations.');
-    await refreshAdmin(); await loadPublic(); render();
-    return;
   }
   if (act === 'export-csv') { downloadCsv(); return; }
   if (act === 'copy-formula') {

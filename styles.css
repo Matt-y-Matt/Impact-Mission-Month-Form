@@ -121,6 +121,14 @@ h1, h2, .brico { font-family: 'Bricolage Grotesque', serif; }
 .stat .n { font-size: 26px; font-weight: 800; font-family: 'Bricolage Grotesque', serif; }
 .stat .l { font-size: 12.5px; color: #6B7263; font-weight: 600; }
 
+/* "These people can go into their 1st choice now" — the one thing on the
+   dashboard that asks for an action, so it gets the loud treatment. */
+.banner { background: #F3F8F3; border: 1px solid #C8DDCB; border-left: 5px solid #2E5B3F; border-radius: 0 14px 14px 0; padding: 16px 18px; margin-bottom: 22px; }
+.banner-head { font-family: 'Bricolage Grotesque', serif; font-weight: 700; font-size: 16.5px; color: #22301F; }
+.banner-sub { margin: 4px 0 12px; font-size: 12.5px; color: #586052; line-height: 1.5; }
+.banner-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: #fff; border: 1px solid #D9E6DA; border-radius: 10px; padding: 9px 12px; margin-bottom: 7px; font-size: 13.5px; }
+.banner-meta { font-size: 12px; color: #6B7263; margin-left: 8px; }
+
 .adm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .adm-opt { cursor: pointer; background: #fff; border: 1px solid #E3E0D5; border-radius: 13px; padding: 15px 16px; }
 .adm-opt:hover { border-color: #2E5B3F; }
@@ -129,8 +137,17 @@ h1, h2, .brico { font-family: 'Bricolage Grotesque', serif; }
 .detail { margin-top: 12px; background: #fff; border: 2px solid #2E5B3F; border-radius: 14px; padding: 20px; }
 .detail-cols { display: flex; gap: 20px; flex-wrap: wrap; }
 .detail-col { flex: 1 1 340px; }
+.col-head { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; margin-bottom: 4px; }
+.col-hint { margin: 0 0 8px; font-size: 12px; color: #8A8F80; }
 .person { border: 1px solid #E3E0D5; border-radius: 10px; padding: 11px 13px; margin-bottom: 8px; }
-.person.wl { border-color: #E6E0F2; background: #FBFAFE; }
+.person.wl { border-color: #F0DEC2; background: #FFFCF6; }
+.person.backup { border-color: #E9E6DB; background: #FAF9F5; color: #6B7263; }
+/* Why this person isn't in their first choice — the difference between
+   "the system bumped them" and "we moved them on purpose". */
+.place-note { font-size: 12px; font-weight: 600; margin-top: 5px; }
+.backup-block { margin-top: 16px; border-top: 1px dashed #E3E0D5; padding-top: 12px; }
+.backup-toggle { cursor: pointer; border: none; background: none; padding: 0 0 8px; font-size: 12.5px; font-weight: 700; color: #8A8F80; font-family: inherit; }
+.backup-toggle:hover { color: #2E5B3F; }
 .p-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
 .chip-btn { cursor: pointer; border: 1px solid #D8D4C6; background: #fff; color: #586052; border-radius: 7px; padding: 5px 10px; font-size: 11.5px; font-weight: 700; }
 .chip-btn.move { border-color: #C96F4A; background: #FBF3EE; color: #A85433; }
@@ -138,9 +155,13 @@ h1, h2, .brico { font-family: 'Bricolage Grotesque', serif; }
 .chip-btn.promote { border: none; background: #2E5B3F; color: #fff; padding: 5px 12px; }
 
 .search-input { width: 100%; max-width: 440px; padding: 11px 15px; border: 1.5px solid #D8D4C6; border-radius: 11px; font-size: 14.5px; background: #fff; margin-bottom: 16px; }
+.people-count { font-size: 12.5px; color: #6B7263; font-weight: 600; margin-bottom: 12px; }
 .people-row { background: #fff; border: 1px solid #E3E0D5; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+/* Each Saturday this person signed up for, nested inside their one card. */
+.sat-row { border: 1px solid #EDEAE0; border-radius: 10px; padding: 10px 12px; margin-top: 10px; background: #FCFBF7; }
 .tag { border-radius: 99px; padding: 2px 9px; font-size: 10px; font-weight: 800; margin-left: 8px; letter-spacing: 0.04em; }
 .tag.dup { background: #FBEEDD; color: #9A5B14; }
+.tag.sats { background: #E7F2E9; color: #256B43; }
 .tag.cancelled { background: #F0EEE6; color: #8A8F80; }
 .hist { margin-top: 9px; background: #F6F2E8; border-radius: 9px; padding: 10px 13px; }
 .hist-row { font-size: 12px; color: #586052; padding: 2px 0; }

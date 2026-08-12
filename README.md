@@ -23,16 +23,39 @@ Volunteer registration form + admin dashboard for September Saturday outreach ev
 The admin passcode and export token live in the `private.admin_config` table, which is not
 exposed to the API at all. Change the passcode from **Admin → Settings** on the site, or via SQL.
 
-## Registration rules (same as the original design)
+## Registration rules
 
 - Per Saturday, a person picks a 1st and 2nd preference (or skips the date).
-- They are **confirmed for exactly one option**: 1st preference if it has room, otherwise 2nd.
+- They are **placed in exactly one option**: 1st preference if it has room, otherwise 2nd.
   If both are full at submission time, the submission is rejected with a friendly message.
-- The non-confirmed preference is kept as a **waitlist** entry, ordered by submission time
-  (admins can reorder it).
 - Duplicate protection: same email + same date is blocked; same name/mobile/NRIC combinations
   are flagged as possible duplicates for admin review.
-- Admins can move, release, promote, cancel, and edit dates/options/capacities live.
+- Admins can move, release, place, cancel, and edit dates/options/capacities live.
+
+## How the dashboard counts things
+
+One person signing up for four Saturdays is **one person and four places**, and the
+dashboard says so — "People signed up" counts people, "Saturday places taken" counts places.
+
+A **1st choice you didn't get is a queue**. A **2nd choice is interest, never a queue** —
+so an option's "Waiting" number only ever counts people who actually wanted it first.
+Each Saturday shows one of four states, and the two that need explaining carry a note:
+
+| State | Means | Note underneath |
+|---|---|---|
+| `1ST CHOICE` | got what they asked for | — |
+| `WAITING FOR 1ST` | in their 2nd choice, still hoping for their 1st | *1st choice was full when they signed up* — or — *Team balancing: an admin moved them here on 9 Aug* |
+| `BACKUP INTEREST` | someone else's 2nd choice for this option; they're happy where they are | — |
+| `NOT PLACED` | an admin released their slot and hasn't re-placed them | — |
+
+The green banner at the top lists everyone whose 1st choice **has room again**, with a
+one-click "Place in 1st choice". It deliberately skips anyone an admin moved on purpose:
+moving someone for team balancing also frees the slot they left, so without that rule the
+banner would ask you to undo your own decision on every refresh. Those people still show
+`WAITING FOR 1ST` with the balancing note, and can still be moved back by hand at any time.
+
+Volunteers see friendlier wording on their confirmation: **CONFIRMED** plus **Backup choice**
+when they got their 1st, and a **Waitlist #n** number only when they genuinely missed it.
 
 ## Editing copy
 
@@ -52,12 +75,11 @@ stars. The description additionally understands:
 Any HTML typed into these fields is escaped, so the above is the only formatting
 available (and the only markup that can reach the page).
 
-Admin → Settings also has a **Testing** section that deletes every registration and
-restarts registration numbering at 1, leaving dates and capacities intact.
-
 ## Export / Google Sheets
 
-- **Admin → Settings → Download CSV** downloads everything as a spreadsheet file.
+- **Admin → Settings → Download CSV** downloads everything as a spreadsheet file. Alongside
+  the answers it carries `Serving In`, `Placement`, `Waiting For` and a `Note` saying whether
+  someone missed their 1st choice because it was full or because an admin moved them.
 - **Google Sheets**: paste the `=IMPORTDATA("…/functions/v1/export-csv?code=…")` formula
   (shown in Admin → Settings) into cell A1 of a sheet — it pulls live data and refreshes
   roughly every hour.
