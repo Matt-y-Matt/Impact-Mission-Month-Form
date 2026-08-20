@@ -49,6 +49,7 @@ Each Saturday shows one of these states, and the ones that need explaining carry
 | `NOT PLACED` | an admin released their slot and hasn't re-placed them | — |
 | `OPTION REMOVED` | they were serving in an option that has since been removed | *"Home Cleaning" was removed — they have no place yet* |
 | `CHOICE REMOVED` | serving somewhere real, but their 1st choice was removed | *confirm where they are, or move them* |
+| `NOT A CHOICE` | serving somewhere that is no longer either of their choices | *names where they are* |
 
 The green banner at the top lists everyone whose 1st choice **has room again**, with a
 one-click "Place in 1st choice". It deliberately skips anyone an admin moved on purpose:
@@ -105,6 +106,17 @@ into becomes their new 1st choice — otherwise they would sit in "waiting for t
 1st choice" forever, queueing for something that no longer exists. Their history
 records what really happened: *"Reassigned after 'Home Cleaning' was removed: now
 in Food Distribution."*
+
+**Editing someone's choices.** *Admin → Participants → the person → Edit choices.*
+Two dropdowns, 1st and 2nd, listing the options that still run that Saturday
+(2nd can be *None*). This is the way back for anyone whose backup vanished when an
+option was removed, and it also covers "they rang and changed their mind" and "we
+tapped the wrong one at sign-up".
+
+It changes **what they asked for, not where they are serving** — their place stays
+put until you move them, so correcting the record can never quietly take someone's
+spot away. If that leaves them serving somewhere that is no longer either choice,
+the dashboard says so rather than pretending their 1st choice was full.
 
 **Lowering a capacity below the people already in it.** Nobody is thrown out —
 being un-invited after being told you're confirmed is not something the software

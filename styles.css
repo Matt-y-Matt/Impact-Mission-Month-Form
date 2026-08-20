@@ -209,3 +209,8 @@ textarea.set-input { font-size: 14px; line-height: 1.55; resize: vertical; }
 .move-meta { font-size: 11.5px; color: #8A8F80; }
 .move-clash { margin-top: 10px; background: #F9E7E2; border: 1px solid #EBC5BB; color: #A13B2A;
   border-radius: 9px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; }
+
+/* Editing what someone asked for, as opposed to where they ended up. */
+.pref-edit { border: 1px solid #D8D4C6; border-radius: 10px; padding: 12px 13px; margin-top: 9px; background: #fff; }
+.pref-edit-row { display: flex; gap: 14px; flex-wrap: wrap; }
+.pref-edit label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: #586052; letter-spacing: 0.03em; }

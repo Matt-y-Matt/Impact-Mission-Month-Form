@@ -34,6 +34,7 @@ const S = {
     authed: false, checking: false, loginError: '',
     tab: 'dash', state: null, open: null, backupOpen: null, q: '', histOpen: {},
     moveOut: null, // { opt, mode: 'rehome' | 'capacity', picks: {regId: optId|''}, error }
+    prefEdit: {}, // regId -> { p1, p2, error } while their choices are being edited
   },
 };
 
@@ -202,6 +203,10 @@ function placement(r) {
         shortName(confOpt ? confOpt.name : r.confirmed)} — confirm that or move them.` };
   }
   if (r.confirmed === r.p1) return { kind: 'first', label: '1ST CHOICE', c: '#256B43', bg: '#E7F2E9', note: '' };
+  if (r.confirmed !== r.p2) {
+    return { kind: 'other', label: 'NOT A CHOICE', c: '#9A5B14', bg: '#FBEEDD',
+      note: `They are serving in ${shortName(confOpt ? confOpt.name : r.confirmed)}, which is not one of their choices any more.` };
+  }
   const day = admMovedOn(r);
   return { kind: 'waiting', label: 'WAITING FOR 1ST', c: '#9A5B14', bg: '#FBEEDD',
     note: r.placed_by_admin
@@ -913,6 +918,39 @@ function admGroupPeople() {
   return [...people.values()].sort((x, y) => y.last - x.last);
 }
 
+/* Changing what someone ASKED FOR, as opposed to where they were put. Needed
+   most after an option is removed — everyone who had it as a backup is left with
+   none, and there was no way to give them one — but it equally covers "they rang
+   and changed their mind" and "we tapped the wrong option at sign-up". */
+function renderPrefEdit(r) {
+  const pe = S.admin.prefEdit[r.id];
+  if (!pe) return '';
+  const opts = liveOpts(admDate(r.date_id));
+  const list = (sel) => opts.map((o) =>
+    `<option value="${o.id}"${sel === o.id ? ' selected' : ''}>${esc(shortName(o.name))} — ${admRemaining(o)} left</option>`).join('');
+  const same = pe.p1 && pe.p1 === pe.p2;
+  return `
+  <div class="pref-edit">
+    <div class="pref-edit-row">
+      <label>1st choice
+        <select class="mini-select" data-set="pref-p1" data-reg="${r.id}">${list(pe.p1)}</select>
+      </label>
+      <label>2nd choice
+        <select class="mini-select" data-set="pref-p2" data-reg="${r.id}">
+          <option value=""${pe.p2 ? '' : ' selected'}>None</option>${list(pe.p2)}
+        </select>
+      </label>
+    </div>
+    <p class="hint" style="margin:8px 0 0;">This changes what they asked for, not where they are serving — that stays put until you move them.</p>
+    ${same ? '<div class="move-clash">1st and 2nd choice must be different.</div>' : ''}
+    ${pe.error ? `<div class="move-clash">${esc(pe.error)}</div>` : ''}
+    <div class="p-actions">
+      <button class="chip-btn promote" data-act="pref-save" data-reg="${r.id}" ${same ? 'disabled' : ''}>Save choices</button>
+      <button class="chip-btn" data-act="pref-cancel" data-reg="${r.id}">Cancel</button>
+    </div>
+  </div>`;
+}
+
 function renderAdminPeople() {
   const a = A();
   const q = (S.admin.q || '').trim().toLowerCase();
@@ -944,9 +982,11 @@ function renderAdminPeople() {
         <div class="p-actions">
           ${canPlaceInFirst(r) ? `<button class="chip-btn promote" data-act="adm-promote" data-reg="${r.id}" data-opt="${esc(r.p1)}">Place in 1st choice</button>` : ''}
           ${pc.canMove ? `<button class="chip-btn move" data-act="adm-move" data-reg="${r.id}">${esc(pc.moveLabel)}</button>` : ''}
+          ${r.status === 'active' ? `<button class="chip-btn" data-act="pref-edit" data-reg="${r.id}">Edit choices</button>` : ''}
           ${r.status === 'active' ? `<button class="chip-btn danger" data-act="adm-cancel" data-reg="${r.id}" data-name="${esc(r.name)}">Cancel</button>` : ''}
           <button class="chip-btn" data-act="adm-hist" data-reg="${r.id}">History</button>
         </div>
+        ${renderPrefEdit(r)}
         ${hist}
       </div>`;
     }).join('');
@@ -1234,6 +1274,21 @@ document.addEventListener('click', async (ev) => {
   if (act === 'adm-wl-up') { reorderWl(el.dataset.opt, el.dataset.reg, -1); return; }
   if (act === 'adm-wl-down') { reorderWl(el.dataset.opt, el.dataset.reg, +1); return; }
   if (act === 'adm-hist') { S.admin.histOpen[el.dataset.reg] = !S.admin.histOpen[el.dataset.reg]; render(); return; }
+  if (act === 'pref-edit') {
+    const r = admActive().find((x) => x.id === el.dataset.reg);
+    if (!r) return;
+    S.admin.prefEdit[r.id] = { p1: r.p1, p2: r.p2 || '', error: '' };
+    render(); return;
+  }
+  if (act === 'pref-cancel') { delete S.admin.prefEdit[el.dataset.reg]; render(); return; }
+  if (act === 'pref-save') {
+    const pe = S.admin.prefEdit[el.dataset.reg];
+    if (!pe || pe.p1 === pe.p2) return;
+    const res = await adminActRes('set_prefs', { reg: el.dataset.reg, p1: pe.p1, p2: pe.p2 || null });
+    if (res.ok) delete S.admin.prefEdit[el.dataset.reg];
+    else S.admin.prefEdit[el.dataset.reg] = Object.assign({}, pe, { error: res.error || 'Could not save those choices.' });
+    render(); return;
+  }
 
   if (act === 'set-remove-date') {
     if (!window.confirm(`Remove "${el.dataset.name}" and all its registrations?`)) return;
@@ -1330,6 +1385,14 @@ document.addEventListener('change', (ev) => {
   if (x) { S.extra[x] = ev.target.value; return; }
   const setKey = ev.target.dataset.set;
   if (!setKey) return;
+  if (setKey === 'pref-p1' || setKey === 'pref-p2') {
+    const pe = S.admin.prefEdit[ev.target.dataset.reg];
+    if (!pe) return;
+    pe[setKey === 'pref-p1' ? 'p1' : 'p2'] = ev.target.value;
+    pe.error = '';
+    render();
+    return;
+  }
   if (setKey === 'move-dest') {
     if (!S.admin.moveOut) return;
     S.admin.moveOut.picks[ev.target.dataset.reg] = ev.target.value;
