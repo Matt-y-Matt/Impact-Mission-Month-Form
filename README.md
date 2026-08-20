@@ -39,7 +39,7 @@ dashboard says so — "People signed up" counts people, "Saturday places taken" 
 
 A **1st choice you didn't get is a queue**. A **2nd choice is interest, never a queue** —
 so an option's "Waiting" number only ever counts people who actually wanted it first.
-Each Saturday shows one of four states, and the two that need explaining carry a note:
+Each Saturday shows one of these states, and the ones that need explaining carry a note:
 
 | State | Means | Note underneath |
 |---|---|---|
@@ -47,6 +47,8 @@ Each Saturday shows one of four states, and the two that need explaining carry a
 | `WAITING FOR 1ST` | in their 2nd choice, still hoping for their 1st | *1st choice was full when they signed up* — or — *Team balancing: an admin moved them here on 9 Aug* |
 | `BACKUP INTEREST` | someone else's 2nd choice for this option; they're happy where they are | — |
 | `NOT PLACED` | an admin released their slot and hasn't re-placed them | — |
+| `OPTION REMOVED` | they were serving in an option that has since been removed | *"Home Cleaning" was removed — they have no place yet* |
+| `CHOICE REMOVED` | serving somewhere real, but their 1st choice was removed | *confirm where they are, or move them* |
 
 The green banner at the top lists everyone whose 1st choice **has room again**, with a
 one-click "Place in 1st choice". It deliberately skips anyone an admin moved on purpose:
@@ -79,18 +81,30 @@ available (and the only markup that can reach the page).
 
 Both of these used to lose people quietly. Neither does now.
 
-**Removing an option.** Options are *retired*, not deleted — the record stays so
-old registrations, history entries and the CSV still show a name instead of a raw
-id. You can't retire one while anyone is attached to it: clicking ✕ opens a panel
-listing every affected person (with their phone and email, so you can call them),
-each with a dropdown of the other options on that Saturday showing how many places
-are left. Overfilling is blocked before anything is sent.
+**Removing an option — delete now, reassign later.** Clicking ✕ in Settings removes
+it straight away, because the urgent thing is that nobody else signs up for
+something that isn't happening. Nobody attached to it is dropped.
 
-Their **preference** is rewritten, not just their placement. If the retired option
-was someone's 1st choice, wherever they land becomes their new 1st choice —
-otherwise they would sit in "waiting for their 1st choice" forever, queueing for
-something that no longer exists. Their history records what really happened:
-*"Home Cleaning was removed. Admin moved them to Food Distribution."*
+Options are *retired* rather than deleted, so the record stays and old
+registrations, history entries and the CSV still show a name instead of a raw id.
+Anyone whose **2nd choice** it was needs no decision — that backup simply no
+longer exists, and they keep the place they already have. Everyone else (sitting
+in it, or holding it as their 1st choice) is flagged on the **Dashboard**:
+
+> **2 people need a new place — "Home Cleaning" was removed**
+> Nobody was dropped and nobody new can sign up for it. Reassign them whenever
+> you're ready — one at a time is fine.
+
+Reassignment happens there, in the same panel as the capacity one: each person
+with their phone and email so you can call them first, and a dropdown of the other
+options that Saturday showing places left. Overfilling is blocked before anything
+is sent, and you can do two people today and the rest tomorrow.
+
+Their **preference** is rewritten, not just their placement. Whatever they move
+into becomes their new 1st choice — otherwise they would sit in "waiting for their
+1st choice" forever, queueing for something that no longer exists. Their history
+records what really happened: *"Reassigned after 'Home Cleaning' was removed: now
+in Food Distribution."*
 
 **Lowering a capacity below the people already in it.** Nobody is thrown out —
 being un-invited after being told you're confirmed is not something the software

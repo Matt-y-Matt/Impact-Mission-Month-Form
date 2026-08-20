@@ -33,7 +33,7 @@ const S = {
     code: sessionStorage.getItem('ss_admin_code') || '',
     authed: false, checking: false, loginError: '',
     tab: 'dash', state: null, open: null, backupOpen: null, q: '', histOpen: {},
-    moveOut: null, // { opt, mode: 'retire' | 'capacity', picks: {regId: optId|''}, error }
+    moveOut: null, // { opt, mode: 'rehome' | 'capacity', picks: {regId: optId|''}, error }
   },
 };
 
@@ -101,7 +101,7 @@ const admOpt = (id) => {
 };
 const admActive = () => (A()?.registrations || []).filter((r) => r.status === 'active');
 const admConfirmedCount = (optId) => admActive().filter((r) => r.confirmed === optId).length;
-const admRemaining = (opt) => Math.max(0, opt.capacity - admConfirmedCount(opt.id));
+const admRemaining = (opt) => (!opt || opt.removed) ? 0 : Math.max(0, opt.capacity - admConfirmedCount(opt.id));
 // Retired options stay in the payload so old registrations and history still
 // show a name — but they must not appear anywhere you can pick or edit.
 const liveOpts = (d) => ((d && d.options) || []).filter((o) => !o.removed);
@@ -126,6 +126,18 @@ const admOverCapacity = () => (A()?.dates || [])
 const admAttached = (optId) => admActive()
   .filter((r) => r.confirmed === optId || r.p1 === optId || r.p2 === optId)
   .sort((a, b) => a.ts - b.ts);
+
+/* Deleting is instant — it has to be, or people keep signing up for something
+   that isn't happening. Finding everyone a new place involves phone calls, so it
+   happens afterwards, at whatever pace suits. These are the people still waiting
+   on that. (A dead 2nd choice needs no decision and is cleared on deletion.) */
+const admPending = (optId) => admActive()
+  .filter((r) => r.confirmed === optId || r.p1 === optId)
+  .sort((a, b) => a.ts - b.ts);
+const admRetiredPending = () => (A()?.dates || [])
+  .flatMap((d) => (d.options || []).filter((o) => o.removed)
+    .map((o) => ({ date: d, opt: o, people: admPending(o.id) })))
+  .filter((x) => x.people.length);
 
 /* Where to put someone by default when their option is going away. Their
    current spot if it survives, else a preference of theirs with room, else
@@ -177,6 +189,17 @@ function placement(r) {
   if (!r.confirmed) {
     return { kind: 'none', label: 'NOT PLACED', c: '#A13B2A', bg: '#F9E7E2',
       note: 'Slot was released — they are not in any team for this Saturday.' };
+  }
+  const confOpt = admOpt(r.confirmed);
+  if (confOpt && confOpt.removed) {
+    return { kind: 'gone', label: 'OPTION REMOVED', c: '#A13B2A', bg: '#F9E7E2',
+      note: `"${confOpt.name}" was removed — they have no place yet.` };
+  }
+  const p1Opt = admOpt(r.p1);
+  if (p1Opt && p1Opt.removed) {
+    return { kind: 'gone1st', label: 'CHOICE REMOVED', c: '#9A5B14', bg: '#FBEEDD',
+      note: `"${p1Opt.name}" was their 1st choice and was removed. They are serving in ${
+        shortName(confOpt ? confOpt.name : r.confirmed)} — confirm that or move them.` };
   }
   if (r.confirmed === r.p1) return { kind: 'first', label: '1ST CHOICE', c: '#256B43', bg: '#E7F2E9', note: '' };
   const day = admMovedOn(r);
@@ -600,24 +623,25 @@ function renderMovePanel() {
   const mo = S.admin.moveOut;
   const opt = admOpt(mo.opt);
   if (!opt) return '';
-  const date = admDate((admAttached(opt.id)[0] || {}).date_id) ||
-    (A().dates || []).find((d) => liveOpts(d).some((o) => o.id === opt.id) || d.options.some((o) => o.id === opt.id));
+  const date = (A().dates || []).find((d) => (d.options || []).some((o) => o.id === opt.id));
+  if (!date) return '';
   const live = liveOpts(date).filter((o) => o.id !== opt.id);
-  const people = mo.mode === 'retire' ? admAttached(opt.id) : admOverflow(opt);
+  const people = mo.mode === 'rehome' ? admPending(opt.id) : admOverflow(opt);
 
   const rows = people.map((r) => {
     const pick = mo.picks[r.id] === undefined ? defaultDest(r, opt.id) : mo.picks[r.id];
     const at = r.confirmed ? admOpt(r.confirmed) : null;
-    const role = r.p1 === opt.id ? '1st choice' : (r.p2 === opt.id ? '2nd choice' : 'serving here');
+    const lost = r.confirmed === opt.id; // was actually serving in the removed option
     // p1 is required, so someone with no surviving second choice must be given one
-    const mustPick = mo.mode === 'retire' && r.p1 === opt.id && !r.p2;
+    const mustPick = mo.mode === 'rehome' && r.p1 === opt.id && !r.p2;
     return `
     <div class="move-row">
       <div class="move-who">
         <strong>${esc(r.name)}</strong>
         <span class="move-meta">${esc(r.mobile)} · ${esc(r.email)}</span>
-        <span class="move-meta">${mo.mode === 'retire'
-          ? `This was their ${esc(role)}${at ? ` · serving in ${esc(shortName(at.name))}` : ' · not placed'}`
+        <span class="move-meta">${mo.mode === 'rehome'
+          ? (lost ? 'Was serving in the removed option — has no place right now'
+                  : `Was their 1st choice · currently serving in ${esc(shortName(at ? at.name : '—'))}`)
           : `Signed up ${fmtTs(r.ts)} — last in, so first over the line`}</span>
       </div>
       <select class="mini-select" data-set="move-dest" data-reg="${r.id}">
@@ -630,18 +654,18 @@ function renderMovePanel() {
   const clash = movePanelClash();
   return `
   <div class="move-panel">
-    <div class="move-head">${mo.mode === 'retire'
-      ? `Removing "${esc(opt.name)}" — where do these ${people.length} ${people.length === 1 ? 'person goes' : 'people go'}?`
+    <div class="move-head">${mo.mode === 'rehome'
+      ? `"${esc(opt.name)}" was removed — where do these ${people.length} ${people.length === 1 ? 'person goes' : 'people go'}?`
       : `"${esc(opt.name)}" holds ${admConfirmedCount(opt.id)} people but the limit is now ${opt.capacity}`}</div>
-    <p class="move-sub">${mo.mode === 'retire'
-      ? 'Nobody is dropped. Whatever you pick becomes their place, and if this was their 1st choice the new one takes its place so they are not left queueing for something that no longer exists.'
+    <p class="move-sub">${mo.mode === 'rehome'
+      ? 'Nobody was dropped when you removed it. Take your time — call them first if you want, and do these one at a time. Whatever you pick becomes their 1st choice, so they are not left queueing for something that no longer exists.'
       : 'Nobody has been removed — these are the latest sign-ups, so they are the ones over the line. Move them or leave them unplaced and call them.'}</p>
     ${rows}
     ${clash.length ? `<div class="move-clash">Not enough room in ${esc(clash.join(', '))}. Pick somewhere else or raise that capacity first.</div>` : ''}
     ${mo.error ? `<div class="move-clash">${esc(mo.error)}</div>` : ''}
     <div class="p-actions" style="margin-top:12px;">
       <button class="chip-btn promote" data-act="move-confirm" ${clash.length ? 'disabled' : ''}>${
-        mo.mode === 'retire' ? `Move ${people.length} and remove the option` : `Move ${people.length} out`}</button>
+        mo.mode === 'rehome' ? `Reassign ${people.length === 1 ? 'this person' : `these ${people.length}`}` : `Move ${people.length} out`}</button>
       <button class="chip-btn" data-act="move-cancel">Cancel</button>
     </div>
   </div>`;
@@ -651,7 +675,7 @@ function renderMovePanel() {
 function movePanelClash() {
   const mo = S.admin.moveOut;
   const opt = admOpt(mo.opt);
-  const people = mo.mode === 'retire' ? admAttached(mo.opt) : admOverflow(opt);
+  const people = mo.mode === 'rehome' ? admPending(mo.opt) : admOverflow(opt);
   const delta = {};
   for (const r of people) {
     const dest = mo.picks[r.id] === undefined ? defaultDest(r, mo.opt) : mo.picks[r.id];
@@ -837,6 +861,18 @@ function renderAdminDash() {
     </div>`;
   }).join('');
 
+  const pending = admRetiredPending();
+  const pendingBanner = pending.map((x) => `
+  <div class="banner over">
+    <div class="banner-head">${x.people.length} ${x.people.length === 1 ? 'person needs' : 'people need'} a new place — "${esc(x.opt.name)}" was removed</div>
+    <p class="banner-sub">${esc(x.date.label)}. Nobody was dropped and nobody new can sign up for it. Reassign them whenever you're ready — one at a time is fine.</p>
+    <div class="banner-row">
+      <div>${x.people.map((r) => esc(r.name)).join(' · ')}</div>
+      <button class="chip-btn promote" data-act="move-open" data-opt="${x.opt.id}" data-mode="rehome">Reassign ${x.people.length}</button>
+    </div>
+    ${S.admin.moveOut && S.admin.moveOut.mode === 'rehome' && S.admin.moveOut.opt === x.opt.id ? renderMovePanel() : ''}
+  </div>`).join('');
+
   const over = admOverCapacity();
   const overBanner = over.length ? `
   <div class="banner over">
@@ -853,7 +889,7 @@ function renderAdminDash() {
     ${S.admin.moveOut && S.admin.moveOut.mode === 'capacity' ? renderMovePanel() : ''}
   </div>` : '';
 
-  return stats + overBanner + banner + dates;
+  return stats + pendingBanner + overBanner + banner + dates;
 }
 
 /* One card per PERSON, with their Saturdays inside it. A row per registration
@@ -944,7 +980,6 @@ function renderAdminSettings() {
   const dates = a.dates.map((d) => {
     const opts = liveOpts(d).map((o) => {
       const over = admOverBy(o);
-      const panel = S.admin.moveOut && S.admin.moveOut.mode === 'retire' && S.admin.moveOut.opt === o.id;
       return `
       <div class="opt-edit-row">
         <input class="name" data-set="opt-name" data-opt="${o.id}" value="${esc(o.name)}">
@@ -955,8 +990,7 @@ function renderAdminSettings() {
         </div>
         <button class="btn-x" data-act="set-remove-opt" data-opt="${o.id}" data-name="${esc(o.name)}">✕</button>
       </div>
-      ${over ? `<div class="cap-over">${over} ${over === 1 ? 'person is' : 'people are'} over this limit — nobody was removed. Sort it out on the Dashboard.</div>` : ''}
-      ${panel ? renderMovePanel() : ''}`;
+      ${over ? `<div class="cap-over">${over} ${over === 1 ? 'person is' : 'people are'} over this limit — nobody was removed. Sort it out on the Dashboard.</div>` : ''}`;
     }).join('');
     return `
     <div class="set-card">
@@ -1214,14 +1248,17 @@ document.addEventListener('click', async (ev) => {
   if (act === 'set-add-date') { adminAct('add_date', {}); return; }
   if (act === 'set-add-opt') { adminAct('add_option', { date: el.dataset.date }); return; }
   if (act === 'set-remove-opt') {
-    const attached = admAttached(el.dataset.opt);
-    if (attached.length) {
-      // Never silently orphan people — decide where they go first.
-      S.admin.moveOut = { opt: el.dataset.opt, mode: 'retire', picks: {}, error: '' };
-      render(); return;
-    }
-    if (!window.confirm(`Remove "${el.dataset.name}"? Nobody has chosen it, so nothing else changes.`)) return;
-    adminAct('remove_option', { opt: el.dataset.opt, moves: [] }); return;
+    // Removing is the urgent half — it stops anyone else signing up for it.
+    // Finding these people a new place is the unhurried half, and it happens on
+    // the Dashboard afterwards.
+    const pending = admPending(el.dataset.opt).length;
+    const msg = pending
+      ? `Remove "${el.dataset.name}" now?\n\nNobody else will be able to sign up for it. The ${pending} ${pending === 1 ? 'person' : 'people'} already on it are NOT dropped — they move to the Dashboard for you to reassign whenever you're ready.`
+      : `Remove "${el.dataset.name}"? Nobody has chosen it, so nothing else changes.`;
+    if (!window.confirm(msg)) return;
+    const res = await adminActRes('remove_option', { opt: el.dataset.opt });
+    if (res.ok && res.pending) { S.admin.tab = 'dash'; S.admin.moveOut = { opt: el.dataset.opt, mode: 'rehome', picks: {}, error: '' }; }
+    render(); return;
   }
   if (act === 'move-open') {
     S.admin.moveOut = { opt: el.dataset.opt, mode: el.dataset.mode, picks: {}, error: '' };
@@ -1231,13 +1268,13 @@ document.addEventListener('click', async (ev) => {
   if (act === 'move-confirm') {
     const mo = S.admin.moveOut;
     const opt = admOpt(mo.opt);
-    const people = mo.mode === 'retire' ? admAttached(mo.opt) : admOverflow(opt);
+    const people = mo.mode === 'rehome' ? admPending(mo.opt) : admOverflow(opt);
     const moves = people.map((r) => ({
       reg: r.id,
       to: mo.picks[r.id] === undefined ? defaultDest(r, mo.opt) : mo.picks[r.id],
     }));
-    const res = mo.mode === 'retire'
-      ? await adminActRes('remove_option', { opt: mo.opt, moves })
+    const res = mo.mode === 'rehome'
+      ? await adminActRes('rehome', { opt: mo.opt, moves })
       : await adminActRes('reassign', { moves, reason: `Limit for ${opt.name} lowered to ${opt.capacity}` });
     if (res.ok) {
       S.admin.moveOut = null;
