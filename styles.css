@@ -60,7 +60,7 @@ h1, h2, .brico { font-family: 'Bricolage Grotesque', serif; }
 .field-edit { border: 1px solid #E3E0D5; border-radius: 12px; padding: 16px; margin-bottom: 12px; background: #FCFBF7; }
 .field-edit .set-input { margin-bottom: 0; }
 .mini-select { padding: 7px 10px; border: 1.5px solid #D8D4C6; border-radius: 8px; font-size: 13px; background: #fff; color: #22301F; font-weight: 600; }
-.chip-btn[disabled] { opacity: 0.35; cursor: default; }
+.chip-btn[disabled] { opacity: 0.35; cursor: not-allowed; }
 
 .date-card { background: #fff; border: 1px solid #E3E0D5; border-radius: 16px; padding: 24px; margin-top: 18px; }
 .date-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
@@ -190,3 +190,22 @@ textarea.set-input { font-size: 14px; line-height: 1.55; resize: vertical; }
 .login-err { color: #A13B2A; font-size: 13px; font-weight: 600; margin-top: 10px; }
 
 .net-err { max-width: 880px; margin: 14px auto 0; background: #F9E7E2; border: 1px solid #EBC5BB; color: #A13B2A; border-radius: 12px; padding: 12px 16px; font-size: 13.5px; }
+
+/* Capacity lowered below the people already in it — louder than the green
+   "you can place someone" banner, because this one is a problem, not an offer. */
+.banner.over { background: #FDF2EE; border-color: #EBC5BB; border-left-color: #C96F4A; }
+.banner.over .banner-head { color: #A13B2A; }
+.banner.over .banner-row { border-color: #EBC5BB; }
+.cap-over { font-size: 12px; font-weight: 700; color: #A13B2A; background: #FDF2EE; border: 1px solid #EBC5BB; border-radius: 8px; padding: 7px 11px; margin: 0 0 10px; }
+
+/* "Where do these people go?" — shown before an option can be removed, and
+   when a lowered limit leaves people over the line. */
+.move-panel { background: #fff; border: 2px solid #C96F4A; border-radius: 12px; padding: 16px; margin: 10px 0 14px; }
+.move-head { font-family: 'Bricolage Grotesque', serif; font-weight: 700; font-size: 15.5px; color: #22301F; }
+.move-sub { margin: 5px 0 12px; font-size: 12.5px; color: #586052; line-height: 1.5; }
+.move-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  border: 1px solid #EDEAE0; border-radius: 10px; padding: 9px 12px; margin-bottom: 7px; background: #FCFBF7; }
+.move-who { display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; }
+.move-meta { font-size: 11.5px; color: #8A8F80; }
+.move-clash { margin-top: 10px; background: #F9E7E2; border: 1px solid #EBC5BB; color: #A13B2A;
+  border-radius: 9px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; }

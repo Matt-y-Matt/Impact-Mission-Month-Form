@@ -33,6 +33,7 @@ const S = {
     code: sessionStorage.getItem('ss_admin_code') || '',
     authed: false, checking: false, loginError: '',
     tab: 'dash', state: null, open: null, backupOpen: null, q: '', histOpen: {},
+    moveOut: null, // { opt, mode: 'retire' | 'capacity', picks: {regId: optId|''}, error }
   },
 };
 
@@ -101,6 +102,43 @@ const admOpt = (id) => {
 const admActive = () => (A()?.registrations || []).filter((r) => r.status === 'active');
 const admConfirmedCount = (optId) => admActive().filter((r) => r.confirmed === optId).length;
 const admRemaining = (opt) => Math.max(0, opt.capacity - admConfirmedCount(opt.id));
+// Retired options stay in the payload so old registrations and history still
+// show a name — but they must not appear anywhere you can pick or edit.
+const liveOpts = (d) => ((d && d.options) || []).filter((o) => !o.removed);
+const admDate = (dateId) => (A()?.dates || []).find((d) => d.id === dateId);
+
+/* Lowering a capacity below the number already confirmed doesn't throw anyone
+   out — that would silently un-invite someone who has been told they're in.
+   The last people to sign up are the ones over the line, and they stay put and
+   get flagged until an admin decides where they go. */
+const admOverBy = (opt) => Math.max(0, admConfirmedCount(opt.id) - opt.capacity);
+const admOverflow = (opt) => {
+  const n = admOverBy(opt);
+  if (!n) return [];
+  return admActive().filter((r) => r.confirmed === opt.id)
+    .sort((a, b) => a.ts - b.ts).slice(-n);
+};
+const admOverCapacity = () => (A()?.dates || [])
+  .flatMap((d) => liveOpts(d).map((o) => ({ date: d, opt: o, over: admOverBy(o) })))
+  .filter((x) => x.over > 0);
+
+// Everyone who would be left pointing at this option if it disappeared.
+const admAttached = (optId) => admActive()
+  .filter((r) => r.confirmed === optId || r.p1 === optId || r.p2 === optId)
+  .sort((a, b) => a.ts - b.ts);
+
+/* Where to put someone by default when their option is going away. Their
+   current spot if it survives, else a preference of theirs with room, else
+   wherever there is the most space. */
+function defaultDest(r, excludeId) {
+  const live = liveOpts(admDate(r.date_id)).filter((o) => o.id !== excludeId);
+  if (live.some((o) => o.id === r.confirmed)) return r.confirmed;
+  const pref = live.find((o) => (o.id === r.p1 || o.id === r.p2) && admRemaining(o) > 0);
+  if (pref) return pref.id;
+  const roomy = live.filter((o) => admRemaining(o) > 0)
+    .sort((a, b) => admRemaining(b) - admRemaining(a))[0];
+  return roomy ? roomy.id : '';
+}
 /* Who is actually queueing for an option: the people whose FIRST choice it is
    and who aren't in it. A 2nd choice is interest, not a place in a queue —
    counting it made every option look besieged when nobody was waiting. */
@@ -261,15 +299,23 @@ async function refreshAdmin() {
 }
 
 async function adminAct(action, payload) {
+  const res = await adminActRes(action, payload);
+  render();
+  return res;
+}
+
+// Same call, but hands back the server's reply so a panel can show why it refused.
+async function adminActRes(action, payload) {
   try {
     const res = await rpc('admin_action', { p_code: S.admin.code, p_action: action, p: payload || {} });
     if (!res.ok && res.error === 'unauthorized') { S.admin.authed = false; }
     await refreshAdmin();
     await loadPublic();
+    return res;
   } catch (e) {
     S.netError = 'Action failed — could not reach the server.';
+    return { ok: false, error: 'Could not reach the server.' };
   }
-  render();
 }
 
 function reorderWl(optId, regId, dir) {
@@ -546,6 +592,78 @@ function personCardHtml(r) {
   return { o1, o2, pl, prefLine, canMove, otherOpt, moveLabel };
 }
 
+/* One panel, two triggers: an option being retired, and an option whose limit
+   was lowered below the people already in it. Both end the same way — every
+   affected person needs somewhere to be, or an explicit "leave them unplaced"
+   so an admin knows to call them. */
+function renderMovePanel() {
+  const mo = S.admin.moveOut;
+  const opt = admOpt(mo.opt);
+  if (!opt) return '';
+  const date = admDate((admAttached(opt.id)[0] || {}).date_id) ||
+    (A().dates || []).find((d) => liveOpts(d).some((o) => o.id === opt.id) || d.options.some((o) => o.id === opt.id));
+  const live = liveOpts(date).filter((o) => o.id !== opt.id);
+  const people = mo.mode === 'retire' ? admAttached(opt.id) : admOverflow(opt);
+
+  const rows = people.map((r) => {
+    const pick = mo.picks[r.id] === undefined ? defaultDest(r, opt.id) : mo.picks[r.id];
+    const at = r.confirmed ? admOpt(r.confirmed) : null;
+    const role = r.p1 === opt.id ? '1st choice' : (r.p2 === opt.id ? '2nd choice' : 'serving here');
+    // p1 is required, so someone with no surviving second choice must be given one
+    const mustPick = mo.mode === 'retire' && r.p1 === opt.id && !r.p2;
+    return `
+    <div class="move-row">
+      <div class="move-who">
+        <strong>${esc(r.name)}</strong>
+        <span class="move-meta">${esc(r.mobile)} · ${esc(r.email)}</span>
+        <span class="move-meta">${mo.mode === 'retire'
+          ? `This was their ${esc(role)}${at ? ` · serving in ${esc(shortName(at.name))}` : ' · not placed'}`
+          : `Signed up ${fmtTs(r.ts)} — last in, so first over the line`}</span>
+      </div>
+      <select class="mini-select" data-set="move-dest" data-reg="${r.id}">
+        ${live.map((o) => `<option value="${o.id}"${pick === o.id ? ' selected' : ''}>${esc(shortName(o.name))} — ${admRemaining(o)} left</option>`).join('')}
+        ${mustPick ? '' : `<option value=""${pick === '' ? ' selected' : ''}>Leave unplaced — I'll call them</option>`}
+      </select>
+    </div>`;
+  }).join('') || '<p class="hint">Nobody is affected.</p>';
+
+  const clash = movePanelClash();
+  return `
+  <div class="move-panel">
+    <div class="move-head">${mo.mode === 'retire'
+      ? `Removing "${esc(opt.name)}" — where do these ${people.length} ${people.length === 1 ? 'person goes' : 'people go'}?`
+      : `"${esc(opt.name)}" holds ${admConfirmedCount(opt.id)} people but the limit is now ${opt.capacity}`}</div>
+    <p class="move-sub">${mo.mode === 'retire'
+      ? 'Nobody is dropped. Whatever you pick becomes their place, and if this was their 1st choice the new one takes its place so they are not left queueing for something that no longer exists.'
+      : 'Nobody has been removed — these are the latest sign-ups, so they are the ones over the line. Move them or leave them unplaced and call them.'}</p>
+    ${rows}
+    ${clash.length ? `<div class="move-clash">Not enough room in ${esc(clash.join(', '))}. Pick somewhere else or raise that capacity first.</div>` : ''}
+    ${mo.error ? `<div class="move-clash">${esc(mo.error)}</div>` : ''}
+    <div class="p-actions" style="margin-top:12px;">
+      <button class="chip-btn promote" data-act="move-confirm" ${clash.length ? 'disabled' : ''}>${
+        mo.mode === 'retire' ? `Move ${people.length} and remove the option` : `Move ${people.length} out`}</button>
+      <button class="chip-btn" data-act="move-cancel">Cancel</button>
+    </div>
+  </div>`;
+}
+
+// Would these picks overfill anything? Counts the places the same moves free up.
+function movePanelClash() {
+  const mo = S.admin.moveOut;
+  const opt = admOpt(mo.opt);
+  const people = mo.mode === 'retire' ? admAttached(mo.opt) : admOverflow(opt);
+  const delta = {};
+  for (const r of people) {
+    const dest = mo.picks[r.id] === undefined ? defaultDest(r, mo.opt) : mo.picks[r.id];
+    if (r.confirmed && r.confirmed !== dest) delta[r.confirmed] = (delta[r.confirmed] || 0) - 1;
+    if (dest && r.confirmed !== dest) delta[dest] = (delta[dest] || 0) + 1;
+  }
+  return Object.keys(delta).filter((id) => {
+    const o = admOpt(id);
+    return delta[id] > 0 && o && admRemaining(o) < delta[id];
+  }).map((id) => `${shortName(admOpt(id).name)} (needs ${delta[id]}, has ${admRemaining(admOpt(id))})`);
+}
+
 const placeBadge = (pl) => `<span class="badge" style="background:${pl.bg};color:${pl.c};">${pl.label}</span>`;
 const placeNote = (pl) => pl.note ? `<div class="place-note" style="color:${pl.c};">${esc(pl.note)}</div>` : '';
 
@@ -591,7 +709,7 @@ function renderAdminDash() {
   </div>` : '';
 
   const dates = a.dates.map((d) => {
-    const opts = d.options.map((o) => {
+    const opts = liveOpts(d).map((o) => {
       const conf = admConfirmedCount(o.id);
       const rem = Math.max(0, o.capacity - conf);
       // Volunteers see "FULL — WAITLIST"; we just need to know it's full.
@@ -719,7 +837,23 @@ function renderAdminDash() {
     </div>`;
   }).join('');
 
-  return stats + banner + dates;
+  const over = admOverCapacity();
+  const overBanner = over.length ? `
+  <div class="banner over">
+    <div class="banner-head">${over.reduce((n, x) => n + x.over, 0)} ${over.reduce((n, x) => n + x.over, 0) === 1 ? 'person is' : 'people are'} over the limit</div>
+    <p class="banner-sub">A capacity was lowered below the number already confirmed. Nobody has been removed — sort out where they go, or put the limit back up.</p>
+    ${over.map((x) => `
+      <div class="banner-row">
+        <div>
+          <strong>${esc(x.opt.name)}</strong>
+          <span class="banner-meta">${esc(x.date.label.replace('Saturday, ', ''))} · ${admConfirmedCount(x.opt.id)} in, limit ${x.opt.capacity}</span>
+        </div>
+        <button class="chip-btn promote" data-act="move-open" data-opt="${x.opt.id}" data-mode="capacity">Move ${x.over} out</button>
+      </div>`).join('')}
+    ${S.admin.moveOut && S.admin.moveOut.mode === 'capacity' ? renderMovePanel() : ''}
+  </div>` : '';
+
+  return stats + overBanner + banner + dates;
 }
 
 /* One card per PERSON, with their Saturdays inside it. A row per registration
@@ -808,7 +942,10 @@ function renderAdminSettings() {
   const a = A();
   const sheetsFormula = `=IMPORTDATA("${EXPORT_URL}?code=${a.export_token}")`;
   const dates = a.dates.map((d) => {
-    const opts = d.options.map((o) => `
+    const opts = liveOpts(d).map((o) => {
+      const over = admOverBy(o);
+      const panel = S.admin.moveOut && S.admin.moveOut.mode === 'retire' && S.admin.moveOut.opt === o.id;
+      return `
       <div class="opt-edit-row">
         <input class="name" data-set="opt-name" data-opt="${o.id}" value="${esc(o.name)}">
         <div class="cap-group">
@@ -817,7 +954,10 @@ function renderAdminSettings() {
           <span class="cap-usage">${admConfirmedCount(o.id)} serving · ${admWaiting(o.id).length} waiting</span>
         </div>
         <button class="btn-x" data-act="set-remove-opt" data-opt="${o.id}" data-name="${esc(o.name)}">✕</button>
-      </div>`).join('');
+      </div>
+      ${over ? `<div class="cap-over">${over} ${over === 1 ? 'person is' : 'people are'} over this limit — nobody was removed. Sort it out on the Dashboard.</div>` : ''}
+      ${panel ? renderMovePanel() : ''}`;
+    }).join('');
     return `
     <div class="set-card">
       <div class="date-edit-row">
@@ -1074,8 +1214,38 @@ document.addEventListener('click', async (ev) => {
   if (act === 'set-add-date') { adminAct('add_date', {}); return; }
   if (act === 'set-add-opt') { adminAct('add_option', { date: el.dataset.date }); return; }
   if (act === 'set-remove-opt') {
-    if (!window.confirm(`Remove "${el.dataset.name}"? Registrations referencing it will keep it in history but lose the slot.`)) return;
-    adminAct('remove_option', { opt: el.dataset.opt }); return;
+    const attached = admAttached(el.dataset.opt);
+    if (attached.length) {
+      // Never silently orphan people — decide where they go first.
+      S.admin.moveOut = { opt: el.dataset.opt, mode: 'retire', picks: {}, error: '' };
+      render(); return;
+    }
+    if (!window.confirm(`Remove "${el.dataset.name}"? Nobody has chosen it, so nothing else changes.`)) return;
+    adminAct('remove_option', { opt: el.dataset.opt, moves: [] }); return;
+  }
+  if (act === 'move-open') {
+    S.admin.moveOut = { opt: el.dataset.opt, mode: el.dataset.mode, picks: {}, error: '' };
+    render(); return;
+  }
+  if (act === 'move-cancel') { S.admin.moveOut = null; render(); return; }
+  if (act === 'move-confirm') {
+    const mo = S.admin.moveOut;
+    const opt = admOpt(mo.opt);
+    const people = mo.mode === 'retire' ? admAttached(mo.opt) : admOverflow(opt);
+    const moves = people.map((r) => ({
+      reg: r.id,
+      to: mo.picks[r.id] === undefined ? defaultDest(r, mo.opt) : mo.picks[r.id],
+    }));
+    const res = mo.mode === 'retire'
+      ? await adminActRes('remove_option', { opt: mo.opt, moves })
+      : await adminActRes('reassign', { moves, reason: `Limit for ${opt.name} lowered to ${opt.capacity}` });
+    if (res.ok) {
+      S.admin.moveOut = null;
+      if (S.admin.open && S.admin.open.opt === mo.opt) S.admin.open = null;
+    } else {
+      S.admin.moveOut = Object.assign({}, mo, { error: res.error || 'Could not apply those moves.' });
+    }
+    render(); return;
   }
   if (act === 'export-csv') { downloadCsv(); return; }
   if (act === 'copy-formula') {
@@ -1123,12 +1293,30 @@ document.addEventListener('change', (ev) => {
   if (x) { S.extra[x] = ev.target.value; return; }
   const setKey = ev.target.dataset.set;
   if (!setKey) return;
+  if (setKey === 'move-dest') {
+    if (!S.admin.moveOut) return;
+    S.admin.moveOut.picks[ev.target.dataset.reg] = ev.target.value;
+    S.admin.moveOut.error = '';
+    render();
+    return;
+  }
   if (setKey === 'config-title') adminAct('set_config', { title: ev.target.value });
   else if (setKey === 'config-desc') adminAct('set_config', { description: ev.target.value });
   else if (setKey === 'date-label') adminAct('set_date_label', { date: ev.target.dataset.date, label: ev.target.value });
   else if (setKey === 'date-subtitle') adminAct('set_date_subtitle', { date: ev.target.dataset.date, subtitle: ev.target.value });
   else if (setKey === 'opt-name') adminAct('set_option', { opt: ev.target.dataset.opt, name: ev.target.value });
-  else if (setKey === 'opt-cap') adminAct('set_option', { opt: ev.target.dataset.opt, capacity: Math.max(0, parseInt(ev.target.value || '0', 10)) });
+  else if (setKey === 'opt-cap') {
+    const cap = Math.max(0, parseInt(ev.target.value || '0', 10));
+    const o = admOpt(ev.target.dataset.opt);
+    const have = o ? admConfirmedCount(o.id) : 0;
+    if (o && cap < have && !window.confirm(
+      `${o.name} already has ${have} people confirmed. Setting the limit to ${cap} leaves ${have - cap} over the line.\n\n` +
+      'Nobody is removed automatically — they stay where they are and the Dashboard will flag them so you can call them and move them.\n\nContinue?')) {
+      ev.target.value = o.capacity;
+      return;
+    }
+    adminAct('set_option', { opt: ev.target.dataset.opt, capacity: cap });
+  }
   else if (setKey === 'field-label') adminAct('set_field', { field: ev.target.dataset.fid, label: ev.target.value });
   else if (setKey === 'field-type') adminAct('set_field', { field: ev.target.dataset.fid, type: ev.target.value });
   else if (setKey === 'field-required') adminAct('set_field', { field: ev.target.dataset.fid, required: ev.target.checked });

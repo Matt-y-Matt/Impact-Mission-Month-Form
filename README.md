@@ -75,6 +75,31 @@ stars. The description additionally understands:
 Any HTML typed into these fields is escaped, so the above is the only formatting
 available (and the only markup that can reach the page).
 
+## Changing the options after people have signed up
+
+Both of these used to lose people quietly. Neither does now.
+
+**Removing an option.** Options are *retired*, not deleted — the record stays so
+old registrations, history entries and the CSV still show a name instead of a raw
+id. You can't retire one while anyone is attached to it: clicking ✕ opens a panel
+listing every affected person (with their phone and email, so you can call them),
+each with a dropdown of the other options on that Saturday showing how many places
+are left. Overfilling is blocked before anything is sent.
+
+Their **preference** is rewritten, not just their placement. If the retired option
+was someone's 1st choice, wherever they land becomes their new 1st choice —
+otherwise they would sit in "waiting for their 1st choice" forever, queueing for
+something that no longer exists. Their history records what really happened:
+*"Home Cleaning was removed. Admin moved them to Food Distribution."*
+
+**Lowering a capacity below the people already in it.** Nobody is thrown out —
+being un-invited after being told you're confirmed is not something the software
+should do on its own. You get a warning before the change saves, and afterwards
+the Dashboard carries a red banner: *"1 person is over the limit."* The people
+over the line are the **latest sign-ups**, and the same panel lets you move each
+of them, or leave one unplaced deliberately so you can call them first. Anyone
+left unplaced shows as `NOT PLACED` until you sort them out.
+
 ## Export / Google Sheets
 
 - **Admin → Settings → Download CSV** downloads everything as a spreadsheet file. Alongside
