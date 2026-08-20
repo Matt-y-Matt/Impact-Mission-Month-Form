@@ -433,6 +433,7 @@ function renderForm() {
           <div class="opt-name">${esc(o.name)}</div>
           <span class="badge" style="background:${b.bg};color:${b.c};">${b.t}</span>
         </div>
+        ${o.blurb ? `<p class="opt-blurb">${richText(o.blurb)}</p>` : ''}
         <div>
           <div class="meter"><div style="width:${pct}%;background:${b.bar};"></div></div>
           <div class="meter-row">
@@ -525,13 +526,19 @@ function renderReview() {
       <div class="review-card">
         <div class="brico" style="font-weight:700;font-size:17px;margin-bottom:12px;">${esc(d.label)}</div>
         <div style="display:flex;flex-direction:column;gap:9px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-            <span style="font-size:14px;"><strong>1st:</strong> ${esc(o1.name)}</span>
-            <span class="badge" style="background:${b1.bg};color:${b1.c};">${b1.t}</span>
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+              <span style="font-size:14px;"><strong>1st:</strong> ${esc(o1.name)}</span>
+              <span class="badge" style="background:${b1.bg};color:${b1.c};">${b1.t}</span>
+            </div>
+            ${o1.blurb ? `<p class="opt-blurb review">${richText(o1.blurb)}</p>` : ''}
           </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-            <span style="font-size:14px;"><strong>2nd:</strong> ${o2 ? esc(o2.name) : '—'}</span>
-            <span class="badge" style="background:${b2.bg};color:${b2.c};">${b2.t}</span>
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+              <span style="font-size:14px;"><strong>2nd:</strong> ${o2 ? esc(o2.name) : '—'}</span>
+              <span class="badge" style="background:${b2.bg};color:${b2.c};">${b2.t}</span>
+            </div>
+            ${o2 && o2.blurb ? `<p class="opt-blurb review">${richText(o2.blurb)}</p>` : ''}
           </div>
         </div>
         <div class="review-expect">${expConf ? `Expected: Confirmed — ${esc(expConf)}${expWl ? ` · Waitlisted — ${esc(expWl)}` : ''}` : 'Both options currently full'}</div>
@@ -1030,6 +1037,8 @@ function renderAdminSettings() {
         </div>
         <button class="btn-x" data-act="set-remove-opt" data-opt="${o.id}" data-name="${esc(o.name)}">✕</button>
       </div>
+      <textarea class="set-input opt-blurb-input" rows="2" data-set="opt-blurb" data-opt="${o.id}"
+        placeholder="One or two sentences: what they'll actually do, and the detail that makes someone choose it. **stars** for bold.">${esc(o.blurb || '')}</textarea>
       ${over ? `<div class="cap-over">${over} ${over === 1 ? 'person is' : 'people are'} over this limit — nobody was removed. Sort it out on the Dashboard.</div>` : ''}`;
     }).join('');
     return `
@@ -1405,6 +1414,7 @@ document.addEventListener('change', (ev) => {
   else if (setKey === 'date-label') adminAct('set_date_label', { date: ev.target.dataset.date, label: ev.target.value });
   else if (setKey === 'date-subtitle') adminAct('set_date_subtitle', { date: ev.target.dataset.date, subtitle: ev.target.value });
   else if (setKey === 'opt-name') adminAct('set_option', { opt: ev.target.dataset.opt, name: ev.target.value });
+  else if (setKey === 'opt-blurb') adminAct('set_option', { opt: ev.target.dataset.opt, blurb: ev.target.value });
   else if (setKey === 'opt-cap') {
     const cap = Math.max(0, parseInt(ev.target.value || '0', 10));
     const o = admOpt(ev.target.dataset.opt);

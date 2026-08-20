@@ -214,3 +214,13 @@ textarea.set-input { font-size: 14px; line-height: 1.55; resize: vertical; }
 .pref-edit { border: 1px solid #D8D4C6; border-radius: 10px; padding: 12px 13px; margin-top: 9px; background: #fff; }
 .pref-edit-row { display: flex; gap: 14px; flex-wrap: wrap; }
 .pref-edit label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: #586052; letter-spacing: 0.03em; }
+
+/* The description under an option name. Muted and a size down, so the card
+   still reads name-first and this is what the eye lands on second. */
+.opt-blurb { margin: -2px 0 0; font-size: 13px; line-height: 1.5; color: #5C6456; }
+.opt-blurb strong { font-weight: 700; color: #22301F; }
+.opt-blurb.review { margin: 5px 0 0; font-size: 12.5px; color: #6B7263; }
+.opt-blurb-input { margin: 6px 0 12px; font-size: 13.5px; line-height: 1.5; resize: vertical; }
+/* Blurbs differ in length, so without this the 1st/2nd buttons sit at different
+   heights across a row and the grid reads as broken. Pinned, it reads as one row. */
+.opt-card .pref-btns { margin-top: auto; }

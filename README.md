@@ -63,8 +63,18 @@ when they got their 1st, and a **Waitlist #n** number only when they genuinely m
 ## Editing copy
 
 Everything visible on the form is editable from **Admin → Settings** without touching code:
-form title, description, each date's label, each option's name and capacity, and the
-line shown under each date heading.
+form title, description, each date's label, each option's name, capacity and description,
+and the line shown under each date heading.
+
+**Option descriptions** are the one to get right. A name says *what* ("Nursing Home
+Befriending"); the description says the thing that actually makes someone choose it
+("half live with dementia, and for most this is their last home"). It appears directly
+under the name on the option card — where the choice is made — and again on the review
+screen before submitting. Deliberately not in the form description at the top: that gets
+read once and forgotten by the time anyone scrolls down, and nobody scrolls back up.
+
+Keep them to one or two sentences. The 1st/2nd buttons pin to the bottom of every card,
+so uneven lengths still line up across a row.
 
 The **description** and the **per-date lines** support `**bold**` — wrap words in double
 stars. The description additionally understands:
