@@ -224,3 +224,67 @@ textarea.set-input { font-size: 14px; line-height: 1.55; resize: vertical; }
 /* Blurbs differ in length, so without this the 1st/2nd buttons sit at different
    heights across a row and the grid reads as broken. Pinned, it reads as one row. */
 .opt-card .pref-btns { margin-top: auto; }
+
+/* ---------- "What am I serving in?" lookup ---------- */
+
+/* Holds its height while the suggestion list is open, so the card does not
+   shrink out from under the names floating over it. */
+.lk-card { padding: 22px 20px; min-height: 320px; }
+
+/* Two ways in: the name you know, or the week you are free. */
+.lk-modes { display: inline-flex; gap: 4px; background: #F1EEE3; padding: 4px; border-radius: 99px; margin-bottom: 20px; }
+.lk-mode { border: none; cursor: pointer; padding: 8px 16px; border-radius: 99px; font-size: 13.5px; font-weight: 600; background: transparent; color: #6B7263; }
+.lk-mode.on { background: #fff; color: #22301F; box-shadow: 0 1px 3px rgba(34,48,31,0.12); }
+
+.lk-label { display: block; font-size: 12.5px; font-weight: 700; color: #586052; margin-bottom: 6px; letter-spacing: 0.03em; }
+.lk-box { position: relative; }
+.lk-input { width: 100%; padding: 14px 42px 14px 16px; border: 1.5px solid #D8D4C6; border-radius: 12px; font-size: 17px; background: #fff; color: #22301F; }
+.lk-input:focus { border-color: #2E5B3F; outline: none; box-shadow: 0 0 0 3px rgba(46,91,63,0.14); }
+.lk-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; border: none; border-radius: 50%; background: #EFECE1; color: #6B7263; font-size: 17px; line-height: 1; cursor: pointer; }
+.lk-clear:hover { background: #E3E0D5; color: #22301F; }
+
+/* Suggestions float over the page so the answer below never jumps around. */
+.lk-sugg { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20; background: #fff; border: 1px solid #E3E0D5; border-radius: 12px; box-shadow: 0 10px 28px rgba(34,48,31,0.14); overflow: hidden; }
+.lk-sugg-item { display: block; width: 100%; text-align: left; border: none; background: transparent; cursor: pointer; padding: 11px 16px; font-size: 15.5px; color: #22301F; border-bottom: 1px solid #F1EEE3; }
+.lk-sugg-item:last-child { border-bottom: none; }
+.lk-sugg-item.on, .lk-sugg-item:hover { background: #F3F7F3; }
+.lk-sugg-item mark { background: none; color: #2E5B3F; font-weight: 800; }
+
+.lk-hint { margin: 16px 0 0; font-size: 14px; color: #6B7263; line-height: 1.6; }
+.lk-miss { margin: 14px 0 0; font-size: 14px; color: #8A5A2A; line-height: 1.6; }
+.lk-inline { border: none; background: none; padding: 0; font: inherit; color: #2E5B3F; text-decoration: underline; cursor: pointer; }
+
+/* The answer. Deliberately the loudest thing on the page once it appears. */
+.lk-result { margin-top: 22px; border: 1px solid #D6E0D6; border-radius: 16px; background: #F7FAF7; padding: 20px; animation: fadeUp 0.28s ease both; }
+.lk-result-name { font-family: 'Bricolage Grotesque', Arial, sans-serif; font-weight: 800; font-size: 22px; color: #22301F; margin-bottom: 14px; }
+.lk-result-weeks { display: flex; flex-direction: column; gap: 2px; }
+.lk-week { display: flex; gap: 14px; align-items: baseline; padding: 11px 0; border-top: 1px solid #E4EBE4; }
+.lk-week:first-child { border-top: none; }
+.lk-week-d { flex: 0 0 62px; font-weight: 700; font-size: 13.5px; color: #586052; letter-spacing: 0.02em; }
+.lk-week-b { flex: 1; font-size: 15.5px; line-height: 1.5; }
+.lk-act { font-weight: 600; color: #22301F; }
+.lk-none { color: #A2A796; }
+.lk-tbc { color: #8A5A2A; font-size: 14px; }
+.lk-again { margin-top: 16px; border: 1.5px solid #D6E0D6; background: #fff; color: #2E5B3F; font-size: 14px; font-weight: 600; padding: 9px 16px; border-radius: 10px; cursor: pointer; }
+.lk-again:hover { border-color: #2E5B3F; }
+
+/* Week-by-week list */
+.lk-weektabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+.lk-weektab { border: 1.5px solid #E3E0D5; background: #fff; color: #6B7263; cursor: pointer; padding: 8px 15px; border-radius: 99px; font-size: 14px; font-weight: 600; }
+.lk-weektab.on { background: #2E5B3F; border-color: #2E5B3F; color: #F6F2E8; }
+.lk-weekhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.lk-weekhead-t { font-family: 'Bricolage Grotesque', Arial, sans-serif; font-weight: 700; font-size: 17px; }
+.lk-weekhead-n { font-size: 13px; color: #8A8F80; white-space: nowrap; }
+.lk-group { border: 1px solid #E3E0D5; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; background: #FCFBF7; }
+.lk-group-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.lk-group-n { font-weight: 700; font-size: 15.5px; color: #22301F; }
+.lk-group-c { font-size: 12.5px; font-weight: 700; color: #2E5B3F; background: #E7F2E9; border-radius: 99px; padding: 2px 10px; white-space: nowrap; }
+.lk-group-note { font-size: 13px; color: #8A5A2A; margin: -4px 0 10px; }
+.lk-group-p { display: flex; flex-wrap: wrap; gap: 6px; }
+.lk-chip { background: #fff; border: 1px solid #E3E0D5; border-radius: 99px; padding: 4px 12px; font-size: 13.5px; color: #22301F; }
+
+@media (max-width: 520px) {
+  .lk-week { flex-direction: column; gap: 2px; }
+  .lk-week-d { flex: none; }
+  .lk-modes, .lk-mode { width: auto; }
+}

@@ -22,13 +22,22 @@ async function rpc(fn, args) {
 }
 
 const S = {
-  view: 'form', // form | review | done | admin
+  view: 'form', // form | review | done | lookup | admin
   pub: null,
   netError: '',
   fName: '', fEmail: '', fMobile: '', fNric: '',
   extra: {}, // answers to the admin-defined questions, keyed by field id
   sel: {}, errors: [], submitError: '', submitting: false,
   doneRegs: [], doneName: '',
+  lookup: {
+    loaded: false, loading: false, error: '',
+    dates: [], people: [],
+    mode: 'find', // find | weeks
+    q: '',        // what has been typed into the search box
+    hi: 0,        // highlighted suggestion, for arrow-key navigation
+    picked: null, // normalised name of the person being shown
+    week: '',     // date id shown by the "Every week" list
+  },
   admin: {
     code: sessionStorage.getItem('ss_admin_code') || '',
     authed: false, checking: false, loginError: '',
@@ -92,6 +101,92 @@ const pubOpt = (id) => {
   return null;
 };
 const remaining = (o) => Math.max(0, o.capacity - o.confirmed);
+
+/* ---------- "what am I serving in?" (public roster) ---------- */
+
+const normName = (s) => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
+
+// "Saturday, 5 September 2026" -> "5 Sep", for the week tabs and result rows.
+const shortDate = (label) => {
+  const m = /(\d{1,2})\s+([A-Za-z]+)/.exec(label || '');
+  return m ? `${m[1]} ${m[2].slice(0, 3)}` : (label || '');
+};
+
+/* One card per person, keyed by name. A name is the only handle a volunteer has
+   on themselves — they do not know which of their two email addresses they used,
+   and the roster really does carry the same person twice under two of them. So
+   the same name is treated as the same person, and a Saturday holds a list:
+   a double sign-up shows both activities rather than silently dropping one. */
+function groupRoster(entries) {
+  const by = new Map();
+  for (const e of entries || []) {
+    const key = normName(e.name);
+    if (!key) continue;
+    if (!by.has(key)) by.set(key, { key, name: String(e.name).trim(), weeks: {} });
+    const weeks = by.get(key).weeks;
+    const list = (weeks[e.date] = weeks[e.date] || []);
+    if (!list.some((x) => x.opt === e.opt && x.gone === e.gone)) {
+      list.push({ opt: e.opt, gone: !!e.gone });
+    }
+  }
+  return Array.from(by.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function loadRoster() {
+  if (S.lookup.loading) return;
+  S.lookup.loading = true;
+  S.lookup.error = '';
+  render();
+  try {
+    const data = await rpc('get_roster');
+    S.lookup.dates = data.dates || [];
+    S.lookup.people = groupRoster(data.entries);
+    S.lookup.loaded = true;
+  } catch (e) {
+    S.lookup.error = 'Could not load the list. Please check your connection and try again.';
+  }
+  S.lookup.loading = false;
+  render();
+}
+
+/* Typing "ru" should offer Ruth before it offers Bruce: a name that starts with
+   what was typed comes first, then any word inside the name, then anywhere. */
+function suggestions() {
+  const q = normName(S.lookup.q);
+  if (!q) return [];
+  const hits = [];
+  for (const p of S.lookup.people) {
+    let score = -1;
+    if (p.key.startsWith(q)) score = 0;
+    else if (p.key.split(' ').some((w) => w.startsWith(q))) score = 1;
+    else if (p.key.includes(q)) score = 2;
+    if (score >= 0) hits.push({ p, score });
+  }
+  hits.sort((a, b) => a.score - b.score || a.p.name.localeCompare(b.p.name));
+  return hits.slice(0, 8).map((h) => h.p);
+}
+
+const pickedPerson = () => S.lookup.people.find((p) => p.key === S.lookup.picked) || null;
+
+// No real activity is named this, so it cannot collide with one.
+const UNPLACED = '∅ no place yet';
+
+// Everyone serving on one Saturday, gathered under the activity they are in.
+function weekGroups(dateId) {
+  const by = new Map();
+  for (const p of S.lookup.people) {
+    for (const x of p.weeks[dateId] || []) {
+      const key = x.opt || UNPLACED;
+      if (!by.has(key)) by.set(key, { name: x.opt, gone: x.gone, people: [] });
+      by.get(key).people.push(p.name);
+    }
+  }
+  const groups = Array.from(by.values());
+  for (const g of groups) g.people.sort((a, b) => a.localeCompare(b));
+  // Live activities first, then retired ones, then anyone with no place yet.
+  const rank = (g) => (!g.name ? 2 : g.gone ? 1 : 0);
+  return groups.sort((a, b) => rank(a) - rank(b) || String(a.name).localeCompare(String(b.name)));
+}
 
 /* ---------- admin data helpers (mirror server ordering) ---------- */
 
@@ -380,8 +475,131 @@ function optionBadge(rem) {
   return { t: 'AVAILABLE', bg: '#E7F2E9', c: '#256B43', bar: '#2E5B3F' };
 }
 
+/* ---------- lookup view ---------- */
+
+// Bolds the letters that were typed, so a suggestion list visibly answers
+// the keystrokes rather than just appearing.
+function markMatch(name, q) {
+  const needle = String(q == null ? '' : q).trim().toLowerCase();
+  if (!needle) return esc(name);
+  const i = String(name).toLowerCase().indexOf(needle);
+  if (i < 0) return esc(name);
+  return esc(name.slice(0, i)) + '<mark>' + esc(name.slice(i, i + needle.length)) +
+         '</mark>' + esc(name.slice(i + needle.length));
+}
+
+function lookupWeekRow(p, d) {
+  const list = p.weeks[d.id] || [];
+  const body = !list.length
+    ? '<span class="lk-none">Not serving this Saturday</span>'
+    : list.map((x) => {
+        if (!x.opt) return '<span class="lk-tbc">Place still being sorted out — check with your Lifenet leader</span>';
+        return `<span class="lk-act">${esc(x.opt)}</span>` +
+               (x.gone ? ' <span class="lk-tbc">(this activity changed — check with your Lifenet leader)</span>' : '');
+      }).join('<br>');
+  return `<div class="lk-week">
+    <div class="lk-week-d">${esc(shortDate(d.label))}</div>
+    <div class="lk-week-b">${body}</div>
+  </div>`;
+}
+
+function renderLookupFind() {
+  const L = S.lookup;
+  const person = pickedPerson();
+  const sugg = (L.q && !L.picked) ? suggestions() : [];
+  const typedNothing = !L.q.trim();
+
+  return `
+  <div class="lk-search">
+    <label class="lk-label">YOUR NAME</label>
+    <div class="lk-box">
+      <input class="lk-input" data-field="lk-q" value="${esc(L.q)}"
+             placeholder="Start typing, e.g. Ruth" autocomplete="off" spellcheck="false">
+      ${L.q ? '<button class="lk-clear" data-act="lk-clear" aria-label="Clear">×</button>' : ''}
+      ${sugg.length ? `<div class="lk-sugg">${sugg.map((p, i) => `
+        <button class="lk-sugg-item ${i === L.hi ? 'on' : ''}" data-act="lk-pick" data-key="${esc(p.key)}">
+          ${markMatch(p.name, L.q)}
+        </button>`).join('')}</div>` : ''}
+    </div>
+    ${(L.q && !L.picked && !sugg.length)
+      ? `<p class="lk-miss">No one signed up under “${esc(L.q)}”. Try just your first name, or your surname on its own — and if it is still not there, have a look through <button class="lk-inline" data-act="lk-mode" data-mode="weeks">the weeks</button>.</p>`
+      : ''}
+  </div>
+
+  ${person ? `
+    <div class="lk-result">
+      <div class="lk-result-name">${esc(person.name)}</div>
+      <div class="lk-result-weeks">
+        ${L.dates.map((d) => lookupWeekRow(person, d)).join('')}
+      </div>
+      <button class="lk-again" data-act="lk-clear">Look up someone else</button>
+    </div>` : ''}
+
+  ${typedNothing ? `
+    <p class="lk-hint">
+      ${L.people.length} people have signed up. Type a name above, or
+      <button class="lk-inline" data-act="lk-mode" data-mode="weeks">see everyone week by week</button>.
+    </p>` : ''}`;
+}
+
+function renderLookupWeeks() {
+  const L = S.lookup;
+  const active = L.dates.find((d) => d.id === L.week) || L.dates[0];
+  if (!active) return '<p class="lk-hint">No Saturdays have been set up yet.</p>';
+  const groups = weekGroups(active.id);
+  const total = groups.reduce((n, g) => n + g.people.length, 0);
+
+  return `
+  <div class="lk-weektabs">
+    ${L.dates.map((d) => `
+      <button class="lk-weektab ${d.id === active.id ? 'on' : ''}" data-act="lk-week" data-week="${esc(d.id)}">
+        ${esc(shortDate(d.label))}
+      </button>`).join('')}
+  </div>
+  <div class="lk-weekhead">
+    <div class="lk-weekhead-t">${esc(active.label)}</div>
+    <div class="lk-weekhead-n">${total} serving</div>
+  </div>
+  ${groups.length ? groups.map((g) => `
+    <div class="lk-group">
+      <div class="lk-group-h">
+        <span class="lk-group-n">${g.name ? esc(g.name) : 'Place still being sorted out'}</span>
+        <span class="lk-group-c">${g.people.length}</span>
+      </div>
+      ${g.gone ? '<div class="lk-group-note">This activity changed — check with your Lifenet leader.</div>' : ''}
+      <div class="lk-group-p">${g.people.map((n) => `<span class="lk-chip">${esc(n)}</span>`).join('')}</div>
+    </div>`).join('')
+    : '<p class="lk-hint">Nobody is signed up for this Saturday yet.</p>'}`;
+}
+
+function renderLookup() {
+  const L = S.lookup;
+  let inner;
+  if (L.error) {
+    inner = `<p class="lk-miss">${esc(L.error)}</p>
+             <button class="btn" data-act="lk-retry">Try again</button>`;
+  } else if (!L.loaded) {
+    inner = '<div class="loading">Loading…</div>';
+  } else {
+    inner = `
+      <div class="lk-modes">
+        <button class="lk-mode ${L.mode === 'find' ? 'on' : ''}" data-act="lk-mode" data-mode="find">Find my name</button>
+        <button class="lk-mode ${L.mode === 'weeks' ? 'on' : ''}" data-act="lk-mode" data-mode="weeks">Every week</button>
+      </div>
+      ${L.mode === 'find' ? renderLookupFind() : renderLookupWeeks()}`;
+  }
+  return `
+  <div class="wrap">
+    <div class="hero">
+      <h1>What am I serving in?</h1>
+      <p>Look up your name to see which activity you are in on each Saturday.</p>
+    </div>
+    <div class="card lk-card">${inner}</div>
+  </div>`;
+}
+
 function renderHeader() {
-  const onAdmin = S.view === 'admin';
+  const tab = S.view === 'admin' ? 'admin' : S.view === 'lookup' ? 'lookup' : 'register';
   return `
   <div class="topbar"><div class="topbar-inner">
     <div class="logo-row">
@@ -389,8 +607,9 @@ function renderHeader() {
       <div class="logo-name">Mission Month</div>
     </div>
     <div class="nav-pills">
-      <button class="nav-pill ${onAdmin ? '' : 'on'}" data-act="nav-register">Register</button>
-      <button class="nav-pill ${onAdmin ? 'on' : ''}" data-act="nav-admin">Admin</button>
+      <button class="nav-pill ${tab === 'register' ? 'on' : ''}" data-act="nav-register">Register</button>
+      <button class="nav-pill ${tab === 'lookup' ? 'on' : ''}" data-act="nav-lookup">My Saturdays</button>
+      <button class="nav-pill ${tab === 'admin' ? 'on' : ''}" data-act="nav-admin">Admin</button>
     </div>
   </div></div>
   ${S.netError ? `<div class="net-err">${esc(S.netError)}</div>` : ''}`;
@@ -1222,6 +1441,7 @@ function render() {
   if (S.view === 'form') body = renderForm();
   else if (S.view === 'review') body = renderReview();
   else if (S.view === 'done') body = renderDone();
+  else if (S.view === 'lookup') body = renderLookup();
   else body = renderAdmin();
   const next = document.createElement('div');
   next.innerHTML = renderHeader() + body;
@@ -1239,6 +1459,34 @@ document.addEventListener('click', async (ev) => {
   const act = el.dataset.act;
 
   if (act === 'nav-register') { S.view = 'form'; S.submitError = ''; render(); return; }
+  if (act === 'nav-lookup') {
+    S.view = 'lookup';
+    render();
+    if (!S.lookup.loaded) await loadRoster();
+    return;
+  }
+  if (act === 'lk-mode') {
+    S.lookup.mode = el.dataset.mode;
+    if (S.lookup.mode === 'weeks' && !S.lookup.week) S.lookup.week = (S.lookup.dates[0] || {}).id || '';
+    render(); return;
+  }
+  if (act === 'lk-week') { S.lookup.week = el.dataset.week; render(); return; }
+  if (act === 'lk-pick') {
+    const p = S.lookup.people.find((x) => x.key === el.dataset.key);
+    if (!p) return;
+    S.lookup.picked = p.key;
+    S.lookup.q = p.name; // fill the box out to the full name, as picking implies
+    S.lookup.hi = 0;
+    render(); return;
+  }
+  if (act === 'lk-clear') {
+    Object.assign(S.lookup, { q: '', picked: null, hi: 0 });
+    render();
+    const box = document.querySelector('.lk-input');
+    if (box) box.focus();
+    return;
+  }
+  if (act === 'lk-retry') { S.lookup.loaded = false; await loadRoster(); return; }
   if (act === 'nav-admin') {
     S.view = 'admin';
     if (S.admin.code && !S.admin.authed) { render(); adminLogin(S.admin.code); return; }
@@ -1378,6 +1626,12 @@ document.addEventListener('input', (ev) => {
     render();
     return;
   }
+  if (f === 'lk-q') {
+    // Typing again means "not that one" — drop the shown person and re-suggest.
+    Object.assign(S.lookup, { q: ev.target.value, picked: null, hi: 0 });
+    render();
+    return;
+  }
   if (f === 'fNric') ev.target.value = ev.target.value.slice(0, 4);
   S[f] = ev.target.value;
 });
@@ -1437,6 +1691,36 @@ document.addEventListener('change', (ev) => {
 // Enter key submits the admin login
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter' && ev.target.id === 'admin-code') adminLogin(ev.target.value);
+});
+
+/* Arrow keys walk the name suggestions and Enter takes the highlighted one,
+   so the whole lookup can be done without lifting a hand to the mouse. */
+document.addEventListener('keydown', (ev) => {
+  if (ev.target.dataset.field !== 'lk-q') return;
+  const list = (S.lookup.q && !S.lookup.picked) ? suggestions() : [];
+
+  if (ev.key === 'Escape') {
+    Object.assign(S.lookup, { q: '', picked: null, hi: 0 });
+    render(); return;
+  }
+  if (!list.length) return;
+
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    ev.preventDefault();
+    const step = ev.key === 'ArrowDown' ? 1 : -1;
+    S.lookup.hi = (S.lookup.hi + step + list.length) % list.length;
+    render(); return;
+  }
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    const p = list[S.lookup.hi] || list[0];
+    Object.assign(S.lookup, { picked: p.key, q: p.name, hi: 0 });
+    // Morphing deliberately never writes into a focused control, so complete
+    // the half-typed name here before handing the screen to the answer.
+    ev.target.value = p.name;
+    ev.target.blur();
+    render();
+  }
 });
 
 // Refresh availability every 30s while on the form (skip while typing)

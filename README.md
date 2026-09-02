@@ -16,6 +16,7 @@ Volunteer registration form + admin dashboard for September Saturday outreach ev
 | Endpoint | Who can call it | What it exposes |
 |---|---|---|
 | `get_public_state()` | anyone | form title/description + per-option availability counts only (no personal data) |
+| `get_roster()` | anyone | names + which activity each person is in, per Saturday — and nothing else (see "My Saturdays" below) |
 | `submit_registration(...)` | anyone | inserts a registration; validation, duplicate checks and capacity allocation run server-side inside a transaction (advisory-locked, so two people can't take the last slot) |
 | `admin_check(code)` / `admin_get_state(code)` / `admin_action(code, ...)` | requires the admin passcode | registrant details + all admin operations |
 | `export_csv(token)` / edge function `export-csv?code=...` | requires the export token | full CSV of registrations |
@@ -31,6 +32,41 @@ exposed to the API at all. Change the passcode from **Admin → Settings** on th
 - Duplicate protection: same email + same date is blocked; same name/mobile/NRIC combinations
   are flagged as possible duplicates for admin review.
 - Admins can move, release, place, cancel, and edit dates/options/capacities live.
+
+## "My Saturdays" — the volunteer lookup
+
+People sign up in one sitting weeks in advance, see the confirmation screen once,
+and then genuinely cannot remember what they picked. The **My Saturdays** tab is
+the answer to that, and it needs no passcode — a volunteer who has forgotten is
+not going to be given the admin code.
+
+Two ways in, on one tab:
+
+- **Find my name** — type a few letters and matching names appear underneath.
+  A name that *starts* with what was typed is offered before one that merely
+  contains it, so `ru` offers Ruth before Bruce. Arrow keys move through the
+  list, Enter takes the highlighted one, or tap it. The answer is all four
+  Saturdays with the activity for each.
+- **Every week** — the same thing from the other side: pick a Saturday, see each
+  activity with everyone in it. Useful for "who else is going?", and it is the
+  fallback offered when a search finds nothing.
+
+Three states get said in plain words rather than left blank: a Saturday someone
+did not sign up for (*Not serving this Saturday*), a released slot (*Place still
+being sorted out*), and someone sitting in an activity that has since been
+retired (*this activity changed*) — all three exist in the live data.
+
+**The same person can appear twice in the data** under two email addresses, so
+the page treats one name as one person: two sign-ups for the same Saturday and
+the same activity collapse into one line, but two genuinely different activities
+on one Saturday are both shown rather than one being silently dropped.
+
+**What this page publishes.** `get_roster()` returns a name, a Saturday and an
+activity — and deliberately nothing else. No email, no mobile, no NRIC, no
+Lifenet, no preferences, no waitlist position, no admin history. It is roughly
+what a sign-up sheet pinned to a church noticeboard shows. Anyone with the link
+can read it, so nothing belongs in that function that would not go on the
+noticeboard.
 
 ## How the dashboard counts things
 
