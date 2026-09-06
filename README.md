@@ -85,7 +85,7 @@ Each Saturday shows one of these states, and the ones that need explaining carry
 | `NOT PLACED` | an admin released their slot and hasn't re-placed them | — |
 | `OPTION REMOVED` | they were serving in an option that has since been removed | *"Home Cleaning" was removed — they have no place yet* |
 | `CHOICE REMOVED` | serving somewhere real, but their 1st choice was removed | *confirm where they are, or move them* |
-| `NOT A CHOICE` | serving somewhere that is no longer either of their choices | *names where they are* |
+| `NOT A CHOICE` | serving somewhere that is neither of their choices | *an admin moved them there on 9 Aug* — or — *names where they are, if their choices drifted instead* |
 
 The green banner at the top lists everyone whose 1st choice **has room again**, with a
 one-click "Place in 1st choice". It deliberately skips anyone an admin moved on purpose:
@@ -163,6 +163,32 @@ It changes **what they asked for, not where they are serving** — their place s
 put until you move them, so correcting the record can never quietly take someone's
 spot away. If that leaves them serving somewhere that is no longer either choice,
 the dashboard says so rather than pretending their 1st choice was full.
+
+**Moving someone somewhere they didn't pick.** *Admin → Participants → the person
+→ Move to…* A dropdown of every activity running that Saturday — not just their
+two choices — each showing places left, and marked up so you can see at a glance
+which one is their 1st, which is their 2nd, and where they are now.
+
+This is the control for the reasons the form never asked about: a team of
+fourteen next to a team of three, a driver needed on the van, two people who
+should not be in the same group, someone who rang and asked. Every other way to
+change a placement is fenced in by what the volunteer picked — this one isn't.
+
+Because it isn't, it says so before it acts. Pick something that is neither of
+their choices and the panel tells you they will show as `NOT A CHOICE` on the
+dashboard, and suggests ringing them first. Pick something already full and it
+warns you, then the confirmation spells out the numbers (*"already full (12 of
+12)"*) and that the dashboard will flag the overfill. Going over a limit stays
+possible — sometimes you genuinely need one more pair of hands — but it can't
+happen by accident.
+
+It changes **where they serve, not what they asked for**, same as everything
+else here: their choices are left exactly as they left them, and *Edit choices*
+is still the thing to use if their preferences really did change. Their history
+records the honest version — *"Admin moved to Meals on Wheels (was Home
+Cleaning) — not one of their choices."* — and because the move was deliberate,
+the green "can be placed in their 1st choice" banner leaves them alone rather
+than asking you to undo your own decision.
 
 **Lowering a capacity below the people already in it.** Nobody is thrown out —
 being un-invited after being told you're confirmed is not something the software

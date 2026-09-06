@@ -44,6 +44,7 @@ const S = {
     tab: 'dash', state: null, open: null, backupOpen: null, q: '', histOpen: {},
     moveOut: null, // { opt, mode: 'rehome' | 'capacity', picks: {regId: optId|''}, error }
     prefEdit: {}, // regId -> { p1, p2, error } while their choices are being edited
+    moveAny: {},  // regId -> { opt, error } while they are being moved off their choices
   },
 };
 
@@ -299,8 +300,14 @@ function placement(r) {
   }
   if (r.confirmed === r.p1) return { kind: 'first', label: '1ST CHOICE', c: '#256B43', bg: '#E7F2E9', note: '' };
   if (r.confirmed !== r.p2) {
+    const where = shortName(confOpt ? confOpt.name : r.confirmed);
+    // Two ways to end up here, and they call for different things: an admin put
+    // them there on purpose, or their choices drifted out from under them.
+    const day = admMovedOn(r);
     return { kind: 'other', label: 'NOT A CHOICE', c: '#9A5B14', bg: '#FBEEDD',
-      note: `They are serving in ${shortName(confOpt ? confOpt.name : r.confirmed)}, which is not one of their choices any more.` };
+      note: r.placed_by_admin
+        ? `An admin moved them into ${where}${day ? ` on ${day}` : ''} — not one of their choices.`
+        : `They are serving in ${where}, which is not one of their choices any more.` };
   }
   const day = admMovedOn(r);
   return { kind: 'waiting', label: 'WAITING FOR 1ST', c: '#9A5B14', bg: '#FBEEDD',
@@ -468,6 +475,15 @@ async function downloadCsv() {
 }
 
 /* ---------- rendering ---------- */
+
+// Server refusals from place_any, in words an admin can act on.
+const MOVE_ANY_ERR = {
+  target_full: 'That one filled up while this panel was open — close it and try again.',
+  bad_target: 'That activity is not running on their Saturday any more.',
+  already_there: 'They are already serving in that one.',
+  not_found: 'That registration could not be found — refresh and try again.',
+  unauthorized: 'Your session expired — log in again.',
+};
 
 function optionBadge(rem) {
   if (rem <= 0) return { t: 'FULL — WAITLIST', bg: '#F9E7E2', c: '#A13B2A', bar: '#C96F4A' };
@@ -1177,6 +1193,52 @@ function renderPrefEdit(r) {
   </div>`;
 }
 
+/* Moving someone to an activity they never picked.
+   The other controls are all bounded by what the volunteer chose; this one is
+   not, so it says out loud what it is about to do before it does it. */
+function renderMoveAny(r) {
+  const ma = S.admin.moveAny[r.id];
+  if (!ma) return '';
+  const opts = liveOpts(admDate(r.date_id));
+  const label = (o) => {
+    const left = admRemaining(o);
+    const mine = o.id === r.p1 ? ' · their 1st choice' : (o.id === r.p2 ? ' · their 2nd choice' : '');
+    const here = o.id === r.confirmed ? ' · already here' : '';
+    return `${shortName(o.name)} — ${left > 0 ? `${left} left` : 'FULL'}${mine}${here}`;
+  };
+  const chosen = ma.opt ? admOpt(ma.opt) : null;
+  const isChoice = !!ma.opt && (ma.opt === r.p1 || ma.opt === r.p2);
+  const full = !!chosen && admRemaining(chosen) <= 0;
+  const same = !!ma.opt && ma.opt === r.confirmed;
+
+  return `
+  <div class="pref-edit">
+    <div class="pref-edit-row">
+      <label>Move to
+        <select class="mini-select" data-set="move-any-opt" data-reg="${r.id}">
+          <option value=""${ma.opt ? '' : ' selected'}>Choose an activity…</option>
+          ${opts.map((o) => `<option value="${o.id}"${ma.opt === o.id ? ' selected' : ''}>${esc(label(o))}</option>`).join('')}
+        </select>
+      </label>
+    </div>
+    <p class="hint" style="margin:8px 0 0;">
+      This moves where they are serving. What they asked for is left alone —
+      use <strong>Edit choices</strong> if their preferences really changed.
+    </p>
+    ${ma.opt && !isChoice && !same ? `<div class="move-warn">
+      ${esc(shortName(chosen ? chosen.name : ma.opt))} is not one of their choices, so they will show as
+      <strong>NOT A CHOICE</strong> on the dashboard until you change their choices or move them back.
+      Worth a phone call first.</div>` : ''}
+    ${full && !same ? `<div class="move-warn">This one is already full — you will be asked to confirm going over the limit.</div>` : ''}
+    ${same ? '<div class="move-clash">They are already serving in this one.</div>' : ''}
+    ${ma.error ? `<div class="move-clash">${esc(ma.error)}</div>` : ''}
+    <div class="p-actions">
+      <button class="chip-btn promote" data-act="move-any-save" data-reg="${r.id}" ${(!ma.opt || same) ? 'disabled' : ''}>Move them</button>
+      <button class="chip-btn" data-act="move-any-cancel" data-reg="${r.id}">Cancel</button>
+    </div>
+  </div>`;
+}
+
 function renderAdminPeople() {
   const a = A();
   const q = (S.admin.q || '').trim().toLowerCase();
@@ -1208,10 +1270,12 @@ function renderAdminPeople() {
         <div class="p-actions">
           ${canPlaceInFirst(r) ? `<button class="chip-btn promote" data-act="adm-promote" data-reg="${r.id}" data-opt="${esc(r.p1)}">Place in 1st choice</button>` : ''}
           ${pc.canMove ? `<button class="chip-btn move" data-act="adm-move" data-reg="${r.id}">${esc(pc.moveLabel)}</button>` : ''}
+          ${r.status === 'active' ? `<button class="chip-btn" data-act="move-any" data-reg="${r.id}">Move to…</button>` : ''}
           ${r.status === 'active' ? `<button class="chip-btn" data-act="pref-edit" data-reg="${r.id}">Edit choices</button>` : ''}
           ${r.status === 'active' ? `<button class="chip-btn danger" data-act="adm-cancel" data-reg="${r.id}" data-name="${esc(r.name)}">Cancel</button>` : ''}
           <button class="chip-btn" data-act="adm-hist" data-reg="${r.id}">History</button>
         </div>
+        ${renderMoveAny(r)}
         ${renderPrefEdit(r)}
         ${hist}
       </div>`;
@@ -1531,6 +1595,38 @@ document.addEventListener('click', async (ev) => {
   if (act === 'adm-wl-up') { reorderWl(el.dataset.opt, el.dataset.reg, -1); return; }
   if (act === 'adm-wl-down') { reorderWl(el.dataset.opt, el.dataset.reg, +1); return; }
   if (act === 'adm-hist') { S.admin.histOpen[el.dataset.reg] = !S.admin.histOpen[el.dataset.reg]; render(); return; }
+  if (act === 'move-any') {
+    S.admin.moveAny[el.dataset.reg] = { opt: '', error: '' };
+    render(); return;
+  }
+  if (act === 'move-any-cancel') { delete S.admin.moveAny[el.dataset.reg]; render(); return; }
+  if (act === 'move-any-save') {
+    const reg = el.dataset.reg;
+    const ma = S.admin.moveAny[reg];
+    const r = admActive().find((x) => x.id === reg);
+    const dest = ma && ma.opt ? admOpt(ma.opt) : null;
+    if (!ma || !r || !dest || ma.opt === r.confirmed) return;
+
+    const isChoice = ma.opt === r.p1 || ma.opt === r.p2;
+    const full = admRemaining(dest) <= 0;
+    const nameOf = (id) => shortName((admOpt(id) || {}).name || id);
+    const lines = [`Move ${r.name} to ${shortName(dest.name)}?`];
+    if (!isChoice) {
+      lines.push(`\nThis is not one of their choices — they asked for ${nameOf(r.p1)}` +
+                 `${r.p2 ? ` or ${nameOf(r.p2)}` : ''}. Only where they serve changes; ` +
+                 'what they asked for stays as it is.');
+    }
+    if (full) {
+      lines.push(`\n${shortName(dest.name)} is already full (${admConfirmedCount(dest.id)} of ` +
+                 `${dest.capacity}). Moving them in puts it over its limit, and the dashboard will flag it.`);
+    }
+    if (!window.confirm(lines.join('\n'))) return;
+
+    const res = await adminActRes('place_any', { reg, opt: ma.opt, allow_over: full });
+    if (res.ok) delete S.admin.moveAny[reg];
+    else ma.error = MOVE_ANY_ERR[res.error] || 'Could not move them — please try again.';
+    render(); return;
+  }
   if (act === 'pref-edit') {
     const r = admActive().find((x) => x.id === el.dataset.reg);
     if (!r) return;
@@ -1648,6 +1744,14 @@ document.addEventListener('change', (ev) => {
   if (x) { S.extra[x] = ev.target.value; return; }
   const setKey = ev.target.dataset.set;
   if (!setKey) return;
+  if (setKey === 'move-any-opt') {
+    const ma = S.admin.moveAny[ev.target.dataset.reg];
+    if (!ma) return;
+    ma.opt = ev.target.value;
+    ma.error = '';
+    render();
+    return;
+  }
   if (setKey === 'pref-p1' || setKey === 'pref-p2') {
     const pe = S.admin.prefEdit[ev.target.dataset.reg];
     if (!pe) return;
